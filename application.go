@@ -85,12 +85,7 @@ func shouldShowAppHelp(args []string) bool {
 		return true
 	}
 
-	switch args[0] {
-	case "help", "--help", "-h":
-		return true
-	default:
-		return false
-	}
+	return args[0] == "help"
 }
 
 func (app *App) showHelp() {
@@ -121,8 +116,7 @@ func (app *App) showHelp() {
 		}
 	}
 
-	fmt.Fprintln(out, "\nOptions:")
-	fmt.Fprintln(out, "  -h, --help, help    Show help")
+	fmt.Fprintln(out, "  help                 Show this help message")
 }
 
 func (app *App) fullPath() string {
