@@ -13,12 +13,12 @@ var (
 )
 
 type App struct {
-	appPath		[]string
+	appPath     []string
 	name        string
 	aliases     []string
 	description string
 	commands    []*Command
-	apps		[]*App
+	apps        []*App
 }
 
 func NewApp(name, description string) *App {
@@ -50,44 +50,52 @@ func (app *App) Alias(name string) *App {
 }
 
 func (app *App) Run(args ...string) error {
-	// コードからの指定がない場合はコマンドライン引数を使用する
-	if args == nil {
-		args = os.Args[1:]
-	}
+	args = app.resolveArgs(args)
 
-	// ヘルプ
-	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+	if shouldShowAppHelp(args) {
 		app.showHelp()
 		return nil
 	}
 
-	// コマンドを検索し、実行する
-	cmd, cmdArgs, err := app.findCommand(args)
-	if err == nil {
+	if cmd, cmdArgs, err := app.findCommand(args); err == nil {
 		return cmd.Run(cmdArgs...)
 	}
 
-	// サブコマンドを検索し、実行する
 	subApp, subArgs, err := app.findSubApp(args)
-	if err == nil {
-		return subApp.Run(subArgs...)
+	if err != nil {
+		if errors.Is(err, ErrCommandNotFound) {
+			fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+			app.showHelp()
+		}
+		return err
 	}
 
-	if errors.Is(err, ErrCommandNotFound) {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
-		app.showHelp()
+	return subApp.Run(subArgs...)
+}
+
+func (app *App) resolveArgs(args []string) []string {
+	if args == nil {
+		return os.Args[1:]
 	}
-	return err
+	return args
+}
+
+func shouldShowAppHelp(args []string) bool {
+	if len(args) == 0 {
+		return true
+	}
+
+	switch args[0] {
+	case "help", "--help", "-h":
+		return true
+	default:
+		return false
+	}
 }
 
 func (app *App) showHelp() {
 	out := os.Stdout
-	name := app.name
-	if name == "" {
-		name = "app"
-	}
-
-	appPath := strings.Join(append(app.appPath, app.name), " ")
+	appPath := app.fullPath()
 	fmt.Fprintf(out, "%s\n\n", appPath)
 	if app.description != "" {
 		fmt.Fprintf(out, "%s\n", app.description)
@@ -117,6 +125,25 @@ func (app *App) showHelp() {
 	fmt.Fprintln(out, "  -h, --help, help    Show help")
 }
 
+func (app *App) fullPath() string {
+	names := append(app.parentPath(), app.displayName())
+	return strings.Join(names, " ")
+}
+
+func (app *App) parentPath() []string {
+	if len(app.appPath) == 0 {
+		return nil
+	}
+	return append([]string(nil), app.appPath...)
+}
+
+func (app *App) displayName() string {
+	if app.name == "" {
+		return "app"
+	}
+	return app.name
+}
+
 func formatNameWithAliases(name string, aliases []string) string {
 	if len(aliases) == 0 {
 		return name
@@ -133,7 +160,7 @@ func (app *App) findCommand(args []string) (*Command, []string, error) {
 	var head string = args[0]
 
 	for _, cmd := range app.commands {
-		if cmd.name == head || slices.Contains(cmd.aliases, head) {
+		if matchesName(cmd.name, cmd.aliases, head) {
 			return cmd, args[1:], nil
 		}
 	}
@@ -149,11 +176,20 @@ func (app *App) findSubApp(args []string) (*App, []string, error) {
 	var head string = args[0]
 
 	for _, subApp := range app.apps {
-		if subApp.name == head || slices.Contains(subApp.aliases, head) {
-			subApp.appPath = append(app.appPath, app.name)
-			return subApp, args[1:], nil
+		if matchesName(subApp.name, subApp.aliases, head) {
+			return app.scopedSubApp(subApp), args[1:], nil
 		}
 	}
 
 	return nil, nil, fmt.Errorf("%w: %s", ErrCommandNotFound, head)
+}
+
+func matchesName(name string, aliases []string, head string) bool {
+	return name == head || slices.Contains(aliases, head)
+}
+
+func (app *App) scopedSubApp(subApp *App) *App {
+	scoped := *subApp
+	scoped.appPath = append(app.parentPath(), app.displayName())
+	return &scoped
 }
