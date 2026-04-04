@@ -1,3 +1,3 @@
-module github.com/Luke256/my_cli
+module github.com/Luke256/suzume
 
 go 1.26.0

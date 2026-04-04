@@ -1,4 +1,4 @@
-package mycli
+package suzume
 
 import (
 	"fmt"
