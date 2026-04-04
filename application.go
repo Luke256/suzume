@@ -73,7 +73,11 @@ func (app *App) Run(args ...string) error {
 		return subApp.Run(subArgs...)
 	}
 
-	return fmt.Errorf("%w: %s", ErrCommandNotFound, args[0])
+	if errors.Is(err, ErrCommandNotFound) {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+		app.showHelp()
+	}
+	return err
 }
 
 func (app *App) showHelp() {
