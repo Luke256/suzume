@@ -59,11 +59,11 @@ func createFunctionHandler(runFunc any) ([]argSpec, func(args ...string) error, 
 	}, nil
 }
 
-func pascalToSnake(s string) string {
+func pascalToKebab(s string) string {
 	var result []string
 	for i, r := range s {
 		if i > 0 && unicode.IsUpper(r) {
-			result = append(result, "_")
+			result = append(result, "-")
 		}
 		result = append(result, string(unicode.ToLower(r)))
 	}
@@ -89,16 +89,22 @@ func createRunnerHandler[T Runner]() ([]argSpec, func(args ...string) error, err
 				return nil, nil, fmt.Errorf("slice fields cannot be used as positional arguments: %s", field.Name)
 			}
 			argSpecs[i] = argSpec{
-				index: idx,
-				name:  pascalToSnake(field.Name),
-				usage: field.Tag.Get("usage"),
+				index:     idx,
+				name:      pascalToKebab(field.Name),
+				usage:     field.Tag.Get("usage"),
+				fieldName: field.Name,
 			}
 		} else {
 			argSpecs[i] = argSpec{
-				index: -1,
-				name:  field.Tag.Get("cli"),
-				short: field.Tag.Get("short"),
-				usage: field.Tag.Get("usage"),
+				index:     -1,
+				name:      field.Tag.Get("cli"),
+				short:     field.Tag.Get("short"),
+				usage:     field.Tag.Get("usage"),
+				fieldName: field.Name,
+			}
+
+			if argSpecs[i].name == "" {
+				argSpecs[i].name = pascalToKebab(field.Name)
 			}
 		}
 	}
@@ -109,7 +115,7 @@ func createRunnerHandler[T Runner]() ([]argSpec, func(args ...string) error, err
 			runner = any(defaulter.Default()).(T)
 		}
 
-		if err := bindArgsToStruct(args, &runner); err != nil {
+		if err := bindArgsToStruct(args, &runner, argSpecs); err != nil {
 			return err
 		}
 

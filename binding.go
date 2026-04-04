@@ -19,7 +19,7 @@ func (state *optionState) clear() {
 	state.valuesRead = 0
 }
 
-func bindArgsToStruct[T any](args []string, runner *T) error {
+func bindArgsToStruct[T any](args []string, runner *T, argSpecs []argSpec) error {
 	v := reflect.ValueOf(runner).Elem()
 
 	var pendingOption optionState
@@ -31,7 +31,7 @@ func bindArgsToStruct[T any](args []string, runner *T) error {
 			if err := finalizePendingOption(&pendingOption); err != nil {
 				return err
 			}
-			if err := bindOptionArg(v, arg, &pendingOption); err != nil {
+			if err := bindOptionArg(v, arg, &pendingOption, argSpecs); err != nil {
 				return err
 			}
 			continue
@@ -44,7 +44,7 @@ func bindArgsToStruct[T any](args []string, runner *T) error {
 			continue
 		}
 
-		field, ok := findFieldByPositionalIndex(v, positionalIndex)
+		field, ok := findFieldByPositionalIndex(v, positionalIndex, argSpecs)
 		if !ok {
 			return fmt.Errorf("%w: unexpected positional argument %q", ErrInvalidArgument, arg)
 		}
@@ -79,9 +79,9 @@ func countPositionalFields(v reflect.Value) int {
 	return count
 }
 
-func bindOptionArg(v reflect.Value, arg string, pendingOption *optionState) error {
+func bindOptionArg(v reflect.Value, arg string, pendingOption *optionState, argSpecs []argSpec) error {
 	if parts := strings.SplitN(arg, "=", 2); len(parts) == 2 {
-		field, ok := findFieldByFlag(v, parts[0])
+		field, ok := findFieldByFlag(v, parts[0], argSpecs)
 		if !ok {
 			return fmt.Errorf("%w: unknown option %q", ErrInvalidArgument, parts[0])
 		}
@@ -105,7 +105,7 @@ func bindOptionArg(v reflect.Value, arg string, pendingOption *optionState) erro
 		return nil
 	}
 
-	field, ok := findFieldByFlag(v, arg)
+	field, ok := findFieldByFlag(v, arg, argSpecs)
 	if !ok {
 		return fmt.Errorf("%w: unknown option %q", ErrInvalidArgument, arg)
 	}
@@ -154,13 +154,12 @@ func finalizePendingOption(pendingOption *optionState) error {
 	return nil
 }
 
-func findFieldByFlag(v reflect.Value, flag string) (reflect.Value, bool) {
+func findFieldByFlag(v reflect.Value, flag string, argSpecs []argSpec) (reflect.Value, bool) {
 	flag = strings.TrimLeft(flag, "-")
 
-	for i := range v.NumField() {
-		field := v.Type().Field(i)
-		if field.Tag.Get("cli") == flag || field.Tag.Get("short") == flag {
-			return v.Field(i), true
+	for _, spec := range argSpecs {
+		if spec.name == flag || spec.short == flag {
+			return v.FieldByName(spec.fieldName), true
 		}
 	}
 
@@ -168,11 +167,10 @@ func findFieldByFlag(v reflect.Value, flag string) (reflect.Value, bool) {
 }
 
 // cliタグに対応する整数が指定されているフィールド
-func findFieldByPositionalIndex(v reflect.Value, index int) (reflect.Value, bool) {
-	for i := range v.NumField() {
-		field := v.Type().Field(i)
-		if idx, err := strconv.Atoi(field.Tag.Get("cli")); err == nil && idx == index {
-			return v.Field(i), true
+func findFieldByPositionalIndex(v reflect.Value, index int, argSpecs []argSpec) (reflect.Value, bool) {
+	for _, spec := range argSpecs {
+		if spec.index == index {
+			return v.FieldByName(spec.fieldName), true
 		}
 	}
 	return reflect.Value{}, false

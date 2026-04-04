@@ -33,10 +33,11 @@ type Command struct {
 }
 
 type argSpec struct {
-	index int
-	name  string
-	short string
-	usage string
+	index     int
+	name      string
+	short     string
+	usage     string
+	fieldName string
 }
 
 func NewCommand(name, description string, runFunc any) (*Command, error) {
