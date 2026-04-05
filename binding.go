@@ -134,6 +134,10 @@ func bindArgsToValues(args []string, argSpecs []argSpec) error {
 		return fmt.Errorf("%w: missing required positional argument: %s", ErrInvalidArgument, argSpecs[positionalIndex].name)
 	}
 
+	if targetArg != nil && targetArg.typeInfo.Kind() != reflect.Slice {
+		return fmt.Errorf("%w: missing value for option: %s", ErrInvalidArgument, targetArg.name)
+	}
+
 	return nil
 }
 
