@@ -72,6 +72,16 @@ func NewCommand(name, description string, runFunc any) (*Command, error) {
 	}, nil
 }
 
+// MustNewCommand is a helper function that creates a new Command and panics if an error occurs.
+// It is useful for cases where the command definition is static and should not fail at runtime.
+func MustNewCommand(name, description string, runFunc any) *Command {
+	cmd, err := NewCommand(name, description, runFunc)
+	if err != nil {
+		panic(err)
+	}
+	return cmd
+}
+
 // UseCommand creates a new Command based on a Runner type.
 // It uses reflection to create a handler function that calls the Run method of the Runner, and it generates argument specifications based on the fields of the Runner struct.
 func UseCommand[T Runner](name, description string) (*Command, error) {
@@ -91,6 +101,16 @@ func UseCommand[T Runner](name, description string) (*Command, error) {
 		argSpecs:    argSpecs,
 		config: defaultConfig(),
 	}, nil
+}
+
+// MustUseCommand is a helper function that creates a new Command based on a Runner type and panics if an error occurs.
+// It is useful for cases where the command definition is static and should not fail at runtime.
+func MustUseCommand[T Runner](name, description string) *Command {
+	cmd, err := UseCommand[T](name, description)
+	if err != nil {
+		panic(err)
+	}
+	return cmd
 }
 
 // Alias adds an alias for the command. If the alias name is empty, it is ignored.
