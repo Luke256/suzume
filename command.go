@@ -27,8 +27,8 @@ type Runner interface {
 }
 
 // Defaulter is an interface that defines a Default method, which can be used to provide default values for command arguments.
-type Defaulter interface {
-	Default() Defaulter
+type Defaulter[T Runner] interface {
+	Default() T
 }
 
 // Command represents a command in the CLI application, including its name, description, handler function, argument specifications, and configuration.

@@ -17,9 +17,10 @@ type captureRunner struct {
 
 var lastCaptureRunner captureRunner
 
-func (r captureRunner) Default() Defaulter {
-	r.Num = 5
-	return r
+func (r captureRunner) Default() captureRunner {
+	return captureRunner{
+		Num: 5,
+	}
 }
 
 func (r captureRunner) Run() error {
