@@ -101,8 +101,11 @@ func (r MyRunner) Default() suzume.Defaulter {
 > [!Important]
 > `Run()` 及び `Default()` メソッドは、構造体の**値**レシーバーで定義してください。
 
+> [!Note]
+> Bool 型のフィールドはすべてフラグとして処理されますが、`--flag=false`のように明示的に値を指定した場合、その値が使用されます。
+
 ## サブコマンドの定義
-サブコマンドを作成するには、`suzume.NewApplication` を使用してアプリケーションを作成し、`AddCommand` メソッドでコマンドを追加します。
+サブコマンドを作成するには、`suzume.NewApp` を使用してアプリケーションを作成し、`AddCommand` メソッドでコマンドを追加します。
 
 ```go
 cmd1, _ := suzume.NewCommand("foo", "bar", func() error {
@@ -115,7 +118,7 @@ cmd2, _ := suzume.NewCommand("hoge", "fuga", func() error {
     return nil
 })
 
-app := suzume.NewApplication("myapp", "My CLI Application")
+app := suzume.NewApp("myapp", "My CLI Application")
 app.AddCommand(cmd1) // myapp foo
 app.AddCommand(cmd2) // myapp hoge
 app.Run()

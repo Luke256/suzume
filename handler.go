@@ -46,7 +46,6 @@ func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
 			index:    i,
 			name:     fmt.Sprintf("arg%d", i+1),
 			typeInfo: arg,
-			value:    reflect.New(arg).Elem(),
 		}
 	}
 
@@ -99,7 +98,6 @@ func createRunnerHandler[T Runner]() ([]argSpec, commandHandler, error) {
 				usage:     field.Tag.Get("usage"),
 				fieldName: field.Name,
 				typeInfo:  field.Type,
-				value:     reflect.New(field.Type).Elem(),
 			}
 		} else {
 			argSpecs[i] = argSpec{
@@ -109,7 +107,6 @@ func createRunnerHandler[T Runner]() ([]argSpec, commandHandler, error) {
 				usage:     field.Tag.Get("usage"),
 				fieldName: field.Name,
 				typeInfo:  field.Type,
-				value:     reflect.New(field.Type).Elem(),
 			}
 
 			if argSpecs[i].name == "" {

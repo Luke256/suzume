@@ -103,7 +103,7 @@ func shouldShowAppHelp(args []string) bool {
 		return true
 	}
 
-	return args[0] == "help"
+	return args[0] == "help" || args[0] == "--help" || args[0] == "-h"
 }
 
 func (app *App) showHelp() {

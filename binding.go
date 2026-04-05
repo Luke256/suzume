@@ -15,19 +15,25 @@ func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
 	case reflect.Int:
 		v, err := strconv.Atoi(arg)
 		if err != nil {
-			return reflect.Value{}, fmt.Errorf("expected an integer, got %q", arg)
+			return reflect.Value{}, fmt.Errorf("%w: expected an integer, got %q", ErrInvalidArgument, arg)
 		}
 		return reflect.ValueOf(v), nil
 	case reflect.Int64:
 		v, err := strconv.ParseInt(arg, 10, 64)
 		if err != nil {
-			return reflect.Value{}, fmt.Errorf("expected an integer, got %q", arg)
+			return reflect.Value{}, fmt.Errorf("%w: expected an integer, got %q", ErrInvalidArgument, arg)
 		}
 		return reflect.ValueOf(v), nil
 	case reflect.Float64:
 		v, err := strconv.ParseFloat(arg, 64)
 		if err != nil {
-			return reflect.Value{}, fmt.Errorf("expected a float, got %q", arg)
+			return reflect.Value{}, fmt.Errorf("%w: expected a float, got %q", ErrInvalidArgument, arg)
+		}
+		return reflect.ValueOf(v), nil
+	case reflect.Bool:
+		v, err := strconv.ParseBool(arg)
+		if err != nil {
+			return reflect.Value{}, fmt.Errorf("%w: expected a boolean, got %q", ErrInvalidArgument, arg)
 		}
 		return reflect.ValueOf(v), nil
 	}
@@ -37,7 +43,7 @@ func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
 		value := reflect.New(argType)
 		unmarshaler := value.Interface().(encoding.TextUnmarshaler)
 		if err := unmarshaler.UnmarshalText([]byte(arg)); err != nil {
-			return reflect.Value{}, fmt.Errorf("failed to parse argument: %v", err)
+			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %v", ErrInvalidArgument, err)
 		}
 		return value.Elem(), nil
 	}
@@ -46,7 +52,7 @@ func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
 		value := reflect.New(argType).Elem()
 		unmarshaler := value.Interface().(encoding.TextUnmarshaler)
 		if err := unmarshaler.UnmarshalText([]byte(arg)); err != nil {
-			return reflect.Value{}, fmt.Errorf("failed to parse argument: %v", err)
+			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %v", ErrInvalidArgument, err)
 		}
 		return value, nil
 	}
@@ -56,6 +62,10 @@ func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
 
 // 引数列を、argSpecsのvaluesに割り当てる
 func bindArgsToValues(args []string, argSpecs []argSpec) error {
+	for i := range argSpecs {
+		argSpecs[i].value = reflect.Value{}
+	}
+
 	var targetArg *argSpec
 	var positionalIndex int
 
@@ -69,12 +79,15 @@ func bindArgsToValues(args []string, argSpecs []argSpec) error {
 			}
 
 			if aspec.typeInfo.Kind() == reflect.Slice {
-				aspec.value.Set(reflect.Append(aspec.value, value))
+				if !aspec.value.IsValid() {
+					aspec.value = reflect.MakeSlice(aspec.typeInfo, 0, 0)
+				}
+				aspec.value = reflect.Append(aspec.value, value)
 			} else {
-				aspec.value.Set(value)
+				aspec.value = value
 			}
 		} else if aspec.typeInfo.Kind() == reflect.Bool {
-			aspec.value.Set(reflect.ValueOf(true))
+			aspec.value = reflect.ValueOf(true)
 		} else {
 			targetArg = aspec
 		}
@@ -93,14 +106,14 @@ func bindArgsToValues(args []string, argSpecs []argSpec) error {
 				// 位置引数
 
 				if positionalIndex >= len(argSpecs) || argSpecs[positionalIndex].index == -1 {
-					return fmt.Errorf("unexpected positional argument %q", arg)
+					return fmt.Errorf("%w: unexpected positional argument %q", ErrInvalidArgument, arg)
 				}
 
 				value, err := parseArg(arg, argSpecs[positionalIndex].typeInfo)
 				if err != nil {
 					return fmt.Errorf("%w: failed to parse argument %d: %v", ErrInvalidArgument, positionalIndex+1, err)
 				}
-				argSpecs[positionalIndex].value.Set(value)
+				argSpecs[positionalIndex].value = value
 				positionalIndex++
 			}
 		} else if targetArg.typeInfo.Kind() == reflect.Slice {
@@ -112,12 +125,16 @@ func bindArgsToValues(args []string, argSpecs []argSpec) error {
 				}
 			} else {
 				// スライスの追加
-
 				value, err := parseArg(arg, targetArg.typeInfo.Elem())
 				if err != nil {
 					return fmt.Errorf("%w: failed to parse argument %q: %v", ErrInvalidArgument, arg, err)
 				}
-				targetArg.value.Set(reflect.Append(targetArg.value, value))
+
+				if !targetArg.value.IsValid() {
+					targetArg.value = reflect.MakeSlice(targetArg.typeInfo, 0, 0)
+				}
+
+				targetArg.value = reflect.Append(targetArg.value, value)
 			}
 		} else {
 			// オプション引数
@@ -125,7 +142,7 @@ func bindArgsToValues(args []string, argSpecs []argSpec) error {
 			if err != nil {
 				return fmt.Errorf("%w: failed to parse argument %q: %v", ErrInvalidArgument, arg, err)
 			}
-			targetArg.value.Set(value)
+			targetArg.value = value
 			targetArg = nil
 		}
 	}
@@ -144,6 +161,10 @@ func bindArgsToValues(args []string, argSpecs []argSpec) error {
 func getArgSpecByFlag(argSpecs []argSpec, arg string) (*argSpec, bool) {
 	if !strings.HasPrefix(arg, "-") {
 		return nil, false
+	}
+	if strings.Contains(arg, "=") {
+		parts := strings.SplitN(arg, "=", 2)
+		arg = parts[0]
 	}
 
 	arg = strings.TrimLeft(arg, "-")
