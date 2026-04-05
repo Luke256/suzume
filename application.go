@@ -12,16 +12,31 @@ var (
 	ErrCommandNotFound = errors.New("Command not found")
 )
 
+// App represents a CLI application that can contain commands and sub-applications.
 type App struct {
-	appPath     []string
-	name        string
-	aliases     []string
+	// appPath is the path of parent applications leading to this app, used for help message generation.
+	appPath []string
+
+	// name is the name of the application, used for command matching and help message generation.
+	name string
+
+	// aliases are alternative names for the application, used for command matching.
+	aliases []string
+
+	// description is a brief description of the application, shown in the help message.
 	description string
-	commands    []*Command
-	apps        []*App
-	config      Config
+
+	// commands is the list of commands directly under this application.
+	commands []*Command
+
+	// apps is the list of sub-applications directly under this application.
+	apps []*App
+
+	// config holds the configuration for the application, such as log output destinations.
+	config Config
 }
 
+// NewApp creates a new App with the given name and description, and initializes it with the default configuration.
 func NewApp(name, description string) *App {
 	return &App{
 		name:        name,
@@ -30,18 +45,21 @@ func NewApp(name, description string) *App {
 	}
 }
 
+// AddCommand adds a command to the application. If the command is nil, it is ignored.
 func (app *App) AddCommand(cmd *Command) {
 	if cmd != nil {
 		app.commands = append(app.commands, cmd)
 	}
 }
 
+// AddApp adds a sub-application to the application. If the sub-application is nil, it is ignored.
 func (app *App) AddApp(subApp *App) {
 	if subApp != nil {
 		app.apps = append(app.apps, subApp)
 	}
 }
 
+// Alias adds an alias for the application. If the alias name is empty, it is ignored.
 func (app *App) Alias(name string) *App {
 	if name == "" {
 		return app
@@ -51,10 +69,14 @@ func (app *App) Alias(name string) *App {
 	return app
 }
 
+// SetConfig sets the configuration for the application. This configuration will be inherited by sub-applications and commands unless they have their own configuration set.
 func (app *App) SetConfig(config Config) {
 	app.config = config
 }
 
+// Run executes the application with the given arguments.
+// It first checks if the arguments indicate that the help message should be shown, then it tries to find a matching command or sub-application to execute.
+// If no matching command or sub-application is found, it returns an error.
 func (app *App) Run(args ...string) error {
 	args = app.resolveArgs(args)
 
@@ -85,6 +107,7 @@ func (app *App) Run(args ...string) error {
 	return subApp.Run(subArgs...)
 }
 
+// RunAndExit executes the application with the given arguments and exits the process with code 1 if an error occurs.
 func (app *App) RunAndExit(args ...string) {
 	if err := app.Run(args...); err != nil {
 		os.Exit(1)

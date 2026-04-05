@@ -59,6 +59,8 @@ cmd, err := suzume.NewCommand("greet", "Greet someone", func(name string, num in
 
 コマンドは `cmd.Run()` を呼び出すことで実行できます。また、`cmd.Run("Luke", "5")`のように引数を直接渡すことも可能です。
 
+コマンドを `cmd.RunAndExit()` で実行すると、コマンドがエラーを返した場合にプロセスが終了コード1で終了します。
+
 ### `suzume.UseCommand` を使用したコマンド定義
 `suzume.UseCommand` を使用すると、より詳細なコマンド定義が可能になります。
 
@@ -85,14 +87,14 @@ Suzumeで使用される構造体タグは次の通りです：
 次に、`suzume.UseCommand` を使用してコマンドを定義します。
 
 ```go
-cmd, err := suzume.UseCommand[MyRunner]("notify", "Say goodbye")
+cmd, err := suzume.UseCommand[GreetCommand]("notify", "Say goodbye")
 ```
 
 引数に対してデフォルト値を明示的に指定する場合、`suzume.Defaulter` を実装することで可能になります。
 
 ```go
-func (r MyRunner) Default() suzume.Defaulter {
-	return MyRunner{
+func (r GreetCommand) Default() suzume.Defaulter {
+	return GreetCommand{
 		Num: 5,
 	}
 }
@@ -104,7 +106,7 @@ func (r MyRunner) Default() suzume.Defaulter {
 > [!Note]
 > Bool 型のフィールドはすべてフラグとして処理されますが、`--flag=false`のように明示的に値を指定した場合、その値が使用されます。
 
-## サブコマンドの定義
+### サブコマンドの定義
 サブコマンドを作成するには、`suzume.NewApp` を使用してアプリケーションを作成し、`AddCommand` メソッドでコマンドを追加します。
 
 ```go
@@ -126,6 +128,21 @@ app.Run()
 
 > [!Important]
 > アプリケーションは0個以上のコマンドと0個以上のサブアプリケーションを持つことができますが、**アプリケーション自体はコマンドとして実行できません**。これは、アプリケーションをサブコマンドのハブとして設計するための意図的な制約です。もしアプリケーション自体が実行能力を持ってしまうと、`myapp subcmd` のようなコマンドの `subcmd` 部分が引数であるのか、サブコマンドであるのかの区別がつかなくなってしまいます。
+
+### サブコマンドのネスト
+サブコマンドはさらにサブコマンドを持つことができます。これにより、複雑なコマンド階層を構築することが可能になります。
+
+```go
+root := suzume.NewApp("root", "Root Command")
+sub1 := suzume.NewApp("sub1", "Sub Command 1")
+cmd, _ := suzume.NewCommand("cmd", "A command", func() error {
+    // do something
+    return nil
+})
+sub1.AddCommand(cmd) // root sub1 cmd
+root.AddCommand(sub1)
+root.Run() // go run main.go sub1 cmd
+```
 
 ## Config
 ログの出力先などの設定は、`SetConfig` メソッドを使用して行います。
