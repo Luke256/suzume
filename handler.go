@@ -22,7 +22,7 @@ func pascalToKebab(s string) string {
 
 // 固定引数の関数をコマンドのハンドラー
 // args: ["arg1", "arg2", ...]
-func createFunctionHandler(runFunc any) ([]argSpec, func(args ...string) error, error) {
+func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
 	v := reflect.TypeOf(runFunc)
 	if v.Kind() != reflect.Func {
 		return nil, nil, fmt.Errorf("runFunc must be a function")
@@ -57,10 +57,6 @@ func createFunctionHandler(runFunc any) ([]argSpec, func(args ...string) error, 
 			return err
 		}
 
-		for _, aspec := range argSpecs {
-			fmt.Printf("%v\n", aspec)
-		}
-
 		in := make([]reflect.Value, v.NumIn())
 		for _, aspec := range argSpecs {
 			if aspec.index != -1 {
@@ -80,7 +76,7 @@ func createFunctionHandler(runFunc any) ([]argSpec, func(args ...string) error, 
 }
 
 // args: ["arg1", "arg2", ... , "--flag", "--opt=value", "--opt", "value", "-o", "value", ...]
-func createRunnerHandler[T Runner]() ([]argSpec, func(args ...string) error, error) {
+func createRunnerHandler[T Runner]() ([]argSpec, commandHandler, error) {
 	v := reflect.TypeFor[T]()
 
 	// Tは構造体の値型でなければならない

@@ -19,6 +19,8 @@ var (
 	}
 )
 
+type commandHandler func(args ...string) error
+
 type Runner interface {
 	Run() error
 }
@@ -31,8 +33,9 @@ type Command struct {
 	name        string
 	aliases     []string
 	description string
-	handler     func(args ...string) error
+	handler     commandHandler
 	argSpecs    []argSpec
+	config      Config
 }
 
 type argSpec struct {
@@ -60,6 +63,7 @@ func NewCommand(name, description string, runFunc any) (*Command, error) {
 		description: description,
 		handler:     handler,
 		argSpecs:    argSpecs,
+		config: defaultConfig(),
 	}, nil
 }
 
@@ -78,6 +82,7 @@ func UseCommand[T Runner](name, description string) (*Command, error) {
 		description: description,
 		handler:     handler,
 		argSpecs:    argSpecs,
+		config: defaultConfig(),
 	}, nil
 }
 
@@ -88,6 +93,10 @@ func (cmd *Command) Alias(name string) *Command {
 
 	cmd.aliases = append(cmd.aliases, name)
 	return cmd
+}
+
+func (cmd *Command) SetConfig(config Config) {
+	cmd.config = config
 }
 
 func (cmd *Command) Run(args ...string) error {
@@ -103,11 +112,17 @@ func (cmd *Command) Run(args ...string) error {
 	err := cmd.handler(args...)
 	if err != nil {
 		if errors.Is(err, ErrInvalidArgument) {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(cmd.config.ErrorLog, err)
 			cmd.showHelp()
 		}
 		return err
 	}
 
 	return nil
+}
+
+func (cmd *Command) RunAndExit(args ...string) {
+	if err := cmd.Run(args...); err != nil {
+		os.Exit(1)
+	}
 }

@@ -7,44 +7,45 @@ import (
 func (cmd *Command) showHelp() {
 	var numArguments int
 	var numOptions int
+	var out = cmd.config.Log
 
-	fmt.Printf("Usage: %s", cmd.name)
+	fmt.Fprintf(out, "Usage: %s", cmd.name)
 	for _, arg := range cmd.argSpecs {
 		if arg.index != -1 {
-			fmt.Printf(" <%s>", arg.name)
+			fmt.Fprintf(out, " <%s>", arg.name)
 			numArguments++
 		} else {
 			if arg.short != "" {
-				fmt.Printf(" [-%s|--%s]", arg.short, arg.name)
+				fmt.Fprintf(out, " [-%s|--%s]", arg.short, arg.name)
 			} else if arg.name != "" {
-				fmt.Printf(" [--%s]", arg.name)
+				fmt.Fprintf(out, " [--%s]", arg.name)
 			}
 			numOptions++
 		}
 	}
-	fmt.Println()
+	fmt.Fprintln(out)
 
 	if cmd.description != "" {
-		fmt.Println(cmd.description)
+		fmt.Fprintln(out, cmd.description)
 	}
 
 	if numArguments > 0 {
-		fmt.Println("\nArguments:")
+		fmt.Fprintln(out, "\nArguments:")
 		for _, arg := range cmd.argSpecs {
 			if arg.index != -1 {
-				fmt.Printf("  %s\t%s\n", arg.name, arg.usage)
+				fmt.Fprintf(out, "  %s\t%s\n", arg.name, arg.usage)
 			}
 		}
 	}
 
 	if numOptions > 0 {
-		fmt.Println("\nOptions:")
+		fmt.Fprintln(out, "\nOptions:")
 		for _, arg := range cmd.argSpecs {
 			if arg.index == -1 {
 				if arg.short != "" {
-					fmt.Printf("  -%s, --%s\t%s\n", arg.short, arg.name, arg.usage)
+					fmt.Fprintf(out, "  -%s, --%s\t%s\n", arg.short, arg.name, arg.usage)
 				} else if arg.name != "" {
-					fmt.Printf("      --%s\t%s\n", arg.name, arg.usage)
+					fmt.Fprintf(out, "      --%s\t%s\n", arg.name, arg.usage)
 				}
 			}
 		}

@@ -19,12 +19,14 @@ type App struct {
 	description string
 	commands    []*Command
 	apps        []*App
+	config      Config
 }
 
 func NewApp(name, description string) *App {
 	return &App{
 		name:        name,
 		description: description,
+		config:      defaultConfig(),
 	}
 }
 
@@ -49,6 +51,10 @@ func (app *App) Alias(name string) *App {
 	return app
 }
 
+func (app *App) SetConfig(config Config) {
+	app.config = config
+}
+
 func (app *App) Run(args ...string) error {
 	args = app.resolveArgs(args)
 
@@ -58,19 +64,31 @@ func (app *App) Run(args ...string) error {
 	}
 
 	if cmd, cmdArgs, err := app.findCommand(args); err == nil {
+		if cmd.config.inherit {
+			cmd.config = app.config
+		}
 		return cmd.Run(cmdArgs...)
 	}
 
 	subApp, subArgs, err := app.findSubApp(args)
 	if err != nil {
 		if errors.Is(err, ErrCommandNotFound) {
-			fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+			fmt.Fprintf(app.config.ErrorLog, "Error: %s\n", err.Error())
 			app.showHelp()
 		}
 		return err
 	}
 
+	if subApp.config.inherit {
+		subApp.config = app.config
+	}
 	return subApp.Run(subArgs...)
+}
+
+func (app *App) RunAndExit(args ...string) {
+	if err := app.Run(args...); err != nil {
+		os.Exit(1)
+	}
 }
 
 func (app *App) resolveArgs(args []string) []string {
@@ -89,7 +107,7 @@ func shouldShowAppHelp(args []string) bool {
 }
 
 func (app *App) showHelp() {
-	out := os.Stdout
+	out := app.config.Log
 	appPath := app.fullPath()
 	fmt.Fprintf(out, "%s\n\n", appPath)
 	if app.description != "" {
