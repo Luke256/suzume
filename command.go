@@ -4,15 +4,18 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
+	"slices"
 )
 
 var (
 	ErrInvalidArgument = errors.New("invalid argument")
 	helpArgSpec        = argSpec{
-		index: -1,
-		name:  "help",
-		short: "h",
-		usage: "Show this help message",
+		index:    -1,
+		name:     "help",
+		short:    "h",
+		usage:    "Show this help message",
+		typeInfo: reflect.TypeFor[bool](),
 	}
 )
 
@@ -38,6 +41,8 @@ type argSpec struct {
 	short     string
 	usage     string
 	fieldName string
+	value     reflect.Value
+	typeInfo  reflect.Type
 }
 
 func NewCommand(name, description string, runFunc any) (*Command, error) {
@@ -90,7 +95,7 @@ func (cmd *Command) Run(args ...string) error {
 		args = os.Args[1:]
 	}
 
-	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+	if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
 		cmd.showHelp()
 		return nil
 	}
