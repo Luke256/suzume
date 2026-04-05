@@ -119,7 +119,7 @@ func createRunnerHandler[T Runner]() ([]argSpec, commandHandler, error) {
 
 	return argSpecs, func(args ...string) error {
 		var runner T
-		if defaulter, ok := any(runner).(Defaulter); ok {
+		if defaulter, ok := any(runner).(Defaulter[T]); ok {
 			runner = any(defaulter.Default()).(T)
 		}
 
