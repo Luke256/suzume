@@ -105,7 +105,7 @@ func bindArgsToValues(args []string, argSpecs []argSpec) error {
 			} else {
 				// 位置引数
 
-				if positionalIndex >= len(argSpecs) || argSpecs[positionalIndex].index == -1 {
+				if positionalIndex >= len(argSpecs) || argSpecs[positionalIndex].index < 0 {
 					return fmt.Errorf("%w: unexpected positional argument %q", ErrInvalidArgument, arg)
 				}
 
@@ -147,7 +147,7 @@ func bindArgsToValues(args []string, argSpecs []argSpec) error {
 		}
 	}
 
-	if positionalIndex < len(argSpecs) && argSpecs[positionalIndex].index != -1 {
+	if positionalIndex < len(argSpecs) && argSpecs[positionalIndex].index >= 0 {
 		return fmt.Errorf("%w: missing required positional argument: %s", ErrInvalidArgument, argSpecs[positionalIndex].name)
 	}
 

@@ -11,7 +11,7 @@ func (cmd *Command) showHelp() {
 
 	fmt.Fprintf(out, "Usage: %s", cmd.name)
 	for _, arg := range cmd.argSpecs {
-		if arg.index != -1 {
+		if arg.index > 0 {
 			fmt.Fprintf(out, " <%s>", arg.name)
 			numArguments++
 		} else {
@@ -32,7 +32,7 @@ func (cmd *Command) showHelp() {
 	if numArguments > 0 {
 		fmt.Fprintln(out, "\nArguments:")
 		for _, arg := range cmd.argSpecs {
-			if arg.index != -1 {
+			if arg.index > 0 {
 				fmt.Fprintf(out, "  %s\t%s\n", arg.name, arg.usage)
 			}
 		}
@@ -41,7 +41,7 @@ func (cmd *Command) showHelp() {
 	if numOptions > 0 {
 		fmt.Fprintln(out, "\nOptions:")
 		for _, arg := range cmd.argSpecs {
-			if arg.index == -1 {
+			if arg.index == optionsIndex {
 				if arg.short != "" {
 					fmt.Fprintf(out, "  -%s, --%s\t%s\n", arg.short, arg.name, arg.usage)
 				} else if arg.name != "" {

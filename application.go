@@ -1,6 +1,7 @@
 package suzume
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -74,10 +75,10 @@ func (app *App) SetConfig(config Config) {
 	app.config = config
 }
 
-// Run executes the application with the given arguments.
+// RunContext executes the application with the given context and arguments.
 // It first checks if the arguments indicate that the help message should be shown, then it tries to find a matching command or sub-application to execute.
 // If no matching command or sub-application is found, it returns an error.
-func (app *App) Run(args ...string) error {
+func (app *App) RunContext(ctx context.Context, args ...string) error {
 	args = app.resolveArgs(args)
 
 	if shouldShowAppHelp(args) {
@@ -89,7 +90,7 @@ func (app *App) Run(args ...string) error {
 		if cmd.config.inherit {
 			cmd.config = app.config
 		}
-		return cmd.Run(cmdArgs...)
+		return cmd.RunContext(ctx, cmdArgs...)
 	}
 
 	subApp, subArgs, err := app.findSubApp(args)
@@ -104,14 +105,24 @@ func (app *App) Run(args ...string) error {
 	if subApp.config.inherit {
 		subApp.config = app.config
 	}
-	return subApp.Run(subArgs...)
+	return subApp.RunContext(ctx, subArgs...)
 }
 
-// RunAndExit executes the application with the given arguments and exits the process with code 1 if an error occurs.
-func (app *App) RunAndExit(args ...string) {
-	if err := app.Run(args...); err != nil {
+// RunContextAndExit executes the application with the given context and arguments and exits the process with code 1 if an error occurs.
+func (app *App) RunContextAndExit(ctx context.Context, args ...string) {
+	if err := app.RunContext(ctx, args...); err != nil {
 		os.Exit(1)
 	}
+}
+
+// Run executes the application with a background context and the given arguments.
+func (app *App) Run(args ...string) error {
+	return app.RunContext(newContext(), args...)
+}
+
+// RunAndExit executes the application with a background context and the given arguments and exits the process with code 1 if an error occurs.
+func (app *App) RunAndExit(args ...string) {
+	app.RunContextAndExit(newContext(), args...)
 }
 
 func (app *App) resolveArgs(args []string) []string {

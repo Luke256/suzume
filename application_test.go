@@ -2,6 +2,7 @@ package suzume
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -171,5 +172,26 @@ func TestApp_SubAppAlias(t *testing.T) {
 
 	if !called {
 		t.Fatalf("expected sub app alias to execute command handler")
+	}
+}
+
+func TestApp_Context(t *testing.T) {
+	var gotVal int
+
+	app := NewApp("testapp", "A test application")
+	cmd := MustNewCommand("hoge", "test command", func(ctx context.Context) error {
+		gotVal = ctx.Value("key").(int)
+		return nil
+	})
+
+	app.AddCommand(cmd)
+
+	ctx := context.WithValue(context.Background(), "key", 123)
+	err := app.RunContext(ctx, "hoge")
+	if err != nil {
+		t.Fatalf("failed to run command with context: %v", err)
+	}
+	if gotVal != 123 {
+		t.Fatalf("expected context value 123, got %d", gotVal)
 	}
 }

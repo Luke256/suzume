@@ -1,11 +1,14 @@
 package suzume
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"reflect"
 	"slices"
+	"syscall"
 )
 
 var (
@@ -19,11 +22,11 @@ var (
 	}
 )
 
-type commandHandler func(args ...string) error
+type commandHandler func(ctx context.Context, args ...string) error
 
 // Runner is an interface that defines a Run method, which is used for commands that can be executed.
 type Runner interface {
-	Run() error
+	Run(context.Context) error
 }
 
 // Defaulter is an interface that defines a Default method, which can be used to provide default values for command arguments.
@@ -68,7 +71,7 @@ func NewCommand(name, description string, runFunc any) (*Command, error) {
 		description: description,
 		handler:     handler,
 		argSpecs:    argSpecs,
-		config: defaultConfig(),
+		config:      defaultConfig(),
 	}, nil
 }
 
@@ -99,7 +102,7 @@ func UseCommand[T Runner](name, description string) (*Command, error) {
 		description: description,
 		handler:     handler,
 		argSpecs:    argSpecs,
-		config: defaultConfig(),
+		config:      defaultConfig(),
 	}, nil
 }
 
@@ -129,8 +132,12 @@ func (cmd *Command) SetConfig(config Config) {
 	cmd.config = config
 }
 
-// Run executes the command with the given arguments.
-func (cmd *Command) Run(args ...string) error {
+// RunContext executes the command with the given context and arguments.
+func (cmd *Command) RunContext(ctx context.Context, args ...string) error {
+	if ctx == nil {
+		return fmt.Errorf("Context cannot be nil")
+	}
+
 	if args == nil {
 		args = os.Args[1:]
 	}
@@ -140,7 +147,11 @@ func (cmd *Command) Run(args ...string) error {
 		return nil
 	}
 
-	err := cmd.handler(args...)
+	cmdCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	err := cmd.handler(cmdCtx, args...)
+
 	if err != nil {
 		if errors.Is(err, ErrInvalidArgument) {
 			fmt.Fprintln(cmd.config.ErrorLog, err)
@@ -152,9 +163,23 @@ func (cmd *Command) Run(args ...string) error {
 	return nil
 }
 
-// RunAndExit executes the command with the given arguments and exits the program with a non-zero status code if an error occurs.
-func (cmd *Command) RunAndExit(args ...string) {
-	if err := cmd.Run(args...); err != nil {
+// RunContextAndExit executes the command with the given context and arguments and exits the program with a non-zero status code if an error occurs.
+func (cmd *Command) RunContextAndExit(ctx context.Context, args ...string) {
+	if err := cmd.RunContext(ctx, args...); err != nil {
 		os.Exit(1)
 	}
+}
+
+// Run executes the command with a background context and the given arguments.
+func (cmd *Command) Run(args ...string) error {
+	return cmd.RunContext(newContext(), args...)
+}
+
+// RunAndExit executes the command with a background context and the given arguments and exits the program with a non-zero status code if an error occurs.
+func (cmd *Command) RunAndExit(args ...string) {
+	cmd.RunContextAndExit(newContext(), args...)
+}
+
+func newContext() context.Context {
+	return context.Background()
 }

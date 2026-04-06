@@ -1,12 +1,18 @@
 package suzume
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode"
+)
+
+const (
+	optionsIndex = -1
+	contextIndex = -2
 )
 
 func pascalToKebab(s string) string {
@@ -30,6 +36,7 @@ func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
 
 	argSpecs := make([]argSpec, v.NumIn()+1)
 	argSpecs[v.NumIn()] = helpArgSpec
+	var argIndex int = 1
 
 	for i := range v.NumIn() {
 		arg := v.In(i)
@@ -42,23 +49,38 @@ func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
 			return nil, nil, fmt.Errorf("boolean arguments cannot be used in function handlers: argument %d", i+1)
 		}
 
-		argSpecs[i] = argSpec{
-			index:    i,
-			name:     fmt.Sprintf("arg%d", i+1),
-			typeInfo: arg,
+		if arg == reflect.TypeFor[context.Context]() {
+			argSpecs[i] = argSpec{
+				index:    contextIndex,
+				name:     "",
+				typeInfo: arg,
+			}
+		} else {
+			argSpecs[i] = argSpec{
+				index:    i,
+				name:     fmt.Sprintf("arg%d", argIndex),
+				typeInfo: arg,
+			}
+			argIndex++
 		}
 	}
 
 	sortArgSpecs(argSpecs)
 
-	return argSpecs, func(args ...string) error {
+	return argSpecs, func(ctx context.Context, args ...string) error {
 		if err := bindArgsToValues(args, argSpecs); err != nil {
 			return err
 		}
 
 		in := make([]reflect.Value, v.NumIn())
+		for i := range v.NumIn() {
+			if v.In(i) == reflect.TypeFor[context.Context]() {
+				in[i] = reflect.ValueOf(ctx)
+			}
+		}
+
 		for _, aspec := range argSpecs {
-			if aspec.index != -1 {
+			if aspec.index >= 0 {
 				in[aspec.index] = aspec.value
 			}
 		}
@@ -101,7 +123,7 @@ func createRunnerHandler[T Runner]() ([]argSpec, commandHandler, error) {
 			}
 		} else {
 			argSpecs[i] = argSpec{
-				index:     -1,
+				index:     optionsIndex,
 				name:      field.Tag.Get("cli"),
 				short:     field.Tag.Get("short"),
 				usage:     field.Tag.Get("usage"),
@@ -117,7 +139,7 @@ func createRunnerHandler[T Runner]() ([]argSpec, commandHandler, error) {
 
 	sortArgSpecs(argSpecs)
 
-	return argSpecs, func(args ...string) error {
+	return argSpecs, func(ctx context.Context, args ...string) error {
 		var runner T
 		if defaulter, ok := any(runner).(Defaulter[T]); ok {
 			runner = any(defaulter.Default()).(T)
@@ -134,16 +156,16 @@ func createRunnerHandler[T Runner]() ([]argSpec, commandHandler, error) {
 			}
 		}
 
-		return runner.Run()
+		return runner.Run(ctx)
 	}, nil
 }
 
 func sortArgSpecs(argSpecs []argSpec) {
 	sort.Slice(argSpecs, func(i, j int) bool {
-		if argSpecs[i].index == -1 {
+		if argSpecs[i].index < 0 {
 			return false
 		}
-		if argSpecs[j].index == -1 {
+		if argSpecs[j].index < 0 {
 			return true
 		}
 		return argSpecs[i].index < argSpecs[j].index

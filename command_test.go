@@ -2,11 +2,14 @@ package suzume
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+type testContextKey string
 
 type captureRunner struct {
 	Name    string   `cli:"0" usage:"Name"`
@@ -23,7 +26,7 @@ func (r captureRunner) Default() captureRunner {
 	}
 }
 
-func (r captureRunner) Run() error {
+func (r captureRunner) Run(context.Context) error {
 	lastCaptureRunner = r
 	return nil
 }
@@ -90,6 +93,91 @@ func TestCommand_Run_InvalidArgumentShowsHelpAndError(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Usage: count") {
 		t.Fatalf("expected help output after invalid argument, got: %q", out.String())
+	}
+}
+
+func TestCommand_RunContext_PassesContextToHandler(t *testing.T) {
+	const key testContextKey = "request-id"
+
+	var gotValue string
+
+	cmd, err := NewCommand("ctx", "Context command", func(ctx context.Context) error {
+		value, _ := ctx.Value(key).(string)
+		gotValue = value
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to create command: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), key, "req-123")
+
+	err = cmd.RunContext(ctx, []string{}...)
+	if err != nil {
+		t.Fatalf("expected no error: %v", err)
+	}
+
+	if gotValue != "req-123" {
+		t.Fatalf("expected context value req-123, got %q", gotValue)
+	}
+
+	if ctx.Err() != nil {
+		t.Fatalf("expected context not to be cancelled, got error: %v", ctx.Err())
+	}
+}
+
+func TestCommand_RunContext_BindsArgsAndContext(t *testing.T) {
+	const key testContextKey = "trace"
+
+	var gotName string
+	var gotTrace string
+
+	cmd, err := NewCommand("ctx-arg", "Context and arg command", func(ctx context.Context, name string) error {
+		gotName = name
+		gotTrace, _ = ctx.Value(key).(string)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to create command: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), key, "trace-xyz")
+
+	err = cmd.RunContext(ctx, "alice")
+	if err != nil {
+		t.Fatalf("expected no error: %v", err)
+	}
+
+	if gotName != "alice" {
+		t.Fatalf("expected positional argument alice, got %q", gotName)
+	}
+	if gotTrace != "trace-xyz" {
+		t.Fatalf("expected context trace trace-xyz, got %q", gotTrace)
+	}
+}
+
+func TestCommand_Run_UsesBackgroundContextForContextHandler(t *testing.T) {
+	var cmdCtx context.Context
+
+	cmd, err := NewCommand("ctx-run", "Run with context", func(ctx context.Context) error {
+		cmdCtx = ctx
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to create command: %v", err)
+	}
+
+	err = cmd.Run([]string{}...)
+	if err != nil {
+		t.Fatalf("expected no error: %v", err)
+	}
+
+	if cmdCtx == nil {
+		t.Fatalf("expected context to be passed to handler")
+	}
+
+	if cmdCtx.Err() == nil {
+		t.Fatalf("expected context to be cancelled after handler returns")
 	}
 }
 
