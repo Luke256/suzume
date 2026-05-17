@@ -263,9 +263,13 @@ func TestContext_Done(t *testing.T) {
 	}()
 	done <- struct{}{}
 
-	r := <-result
-	if r != 2 {
-		t.Fatalf("Expected result is 1 for done case, but got %d", r)
+	select {
+	case r := <-result:
+		if r != 2 {
+			t.Fatalf("Expected result is 1 for done case, but got %d", r)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("signalTestCommand does not finished in 10 seconds.")
 	}
 
 	// finish by context cancellation
@@ -276,9 +280,13 @@ func TestContext_Done(t *testing.T) {
 
 	cancel()
 
-	r = <-result
-	if r != 1 {
-		t.Fatalf("Expected result is 2 for cancel case, but got %d", r)
+	select {
+	case r := <-result:
+		if r != 1 {
+			t.Fatalf("Expected result is 2 for cancel case, but got %d", r)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("signalTestCommand does not finished in 10 seconds.")
 	}
 }
 
@@ -339,11 +347,18 @@ func TestCommand_RunContext_SignalHandling(t *testing.T) {
 			ErrorLog:      &out,
 		})
 
+		ready := make(chan struct{})
+
 		go func() {
+			ready<-struct{}{}
 			cmd.Run([]string{}...)
 		}()
 
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-ready:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("sig-configured does not started in 10 seconds.")
+		}
 
 		proc, err := os.FindProcess(os.Getpid())
 		if err != nil {

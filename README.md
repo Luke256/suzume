@@ -161,7 +161,7 @@ cmd.SetConfig(suzume.Config{
 デフォルトでは、ログは標準出力に、エラーログは標準エラー出力に出力されます。
 
 ### シグナルのハンドリング
-`suzume.Config` の `IgnoreSignals` フィールドで指定されたシグナルは、コマンドやアプリケーションが受け取っても一度無視され、コマンドのコンテキストへ渡されます。
+`suzume.Config` の `IgnoreSignals` フィールドで指定されたシグナルは、コマンドやアプリケーションが受け取っても一度無視され、コマンドのコンテキストがキャンセルされます。
 
 ```go
 cmd.SetConfig(suzume.Config{

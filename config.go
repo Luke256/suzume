@@ -17,7 +17,7 @@ type Config struct {
 	// ErrorLog is the destination for error output. By default, it is set to os.Stderr.
 	ErrorLog io.Writer
 
-	// IgnoreSignals is slice of os.Signal to ignore. By default, command does not ignore any signals.
+	// IgnoreSignals is a slice of os.Signal to ignore. By default, command does not ignore any signals.
 	IgnoreSignals []os.Signal
 }
 
