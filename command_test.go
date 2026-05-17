@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 type testContextKey string
@@ -234,4 +237,138 @@ func TestUseCommand_RejectsPointerRunnerType(t *testing.T) {
 	if !strings.Contains(err.Error(), "Runner type cannot be a pointer") {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func TestContext_Done(t *testing.T) {
+	done := make(chan struct{})
+	result := make(chan int)
+
+	signalTestCommand := func(ctx context.Context) {
+		select {
+		case <-ctx.Done():
+			result <- 1
+		case <-done:
+			result <- 2
+		}
+	}
+
+	cmd, err := NewCommand("signal", "Signal test command", signalTestCommand)
+	if err != nil {
+		t.Fatalf("unexpected error during creating command: %v", err)
+	}
+
+	// finish normally
+	go func() {
+		cmd.Run([]string{}...)
+	}()
+	done <- struct{}{}
+
+	select {
+	case r := <-result:
+		if r != 2 {
+			t.Fatalf("Expected result is 1 for done case, but got %d", r)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("signalTestCommand does not finished in 10 seconds.")
+	}
+
+	// finish by context cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		cmd.RunContext(ctx, []string{}...)
+	}()
+
+	cancel()
+
+	select {
+	case r := <-result:
+		if r != 1 {
+			t.Fatalf("Expected result is 2 for cancel case, but got %d", r)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("signalTestCommand does not finished in 10 seconds.")
+	}
+}
+
+func TestCommand_RunContext_SignalHandling(t *testing.T) {
+	t.Run("Cancel context without signal config", func(t *testing.T) {
+		done := make(chan struct{})
+		result := make(chan int)
+
+		cmd, err := NewCommand("sig-none", "Test no signal", func(ctx context.Context) {
+			select {
+			case <-ctx.Done():
+				result <- 1
+			case <-done:
+				result <- 2
+			}
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			cmd.RunContext(ctx, []string{}...)
+		}()
+
+		cancel()
+
+		r := <-result
+		if r != 1 {
+			t.Fatalf("Expected context to be cancelled, got %d", r)
+		}
+	})
+
+	t.Run("Signal with config", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Skipping signal test on Windows")
+		}
+
+		done := make(chan struct{})
+		result := make(chan int)
+
+		cmd, err := NewCommand("sig-configured", "Test with signal", func(ctx context.Context) {
+			select {
+			case <-ctx.Done():
+				result <- 1
+			case <-done:
+				result <- 2
+			}
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		var out bytes.Buffer
+		cmd.SetConfig(Config{
+			IgnoreSignals: []os.Signal{os.Interrupt},
+			Log:           &out,
+			ErrorLog:      &out,
+		})
+
+		ready := make(chan struct{})
+
+		go func() {
+			ready<-struct{}{}
+			cmd.Run([]string{}...)
+		}()
+
+		select {
+		case <-ready:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("sig-configured does not started in 10 seconds.")
+		}
+
+		proc, err := os.FindProcess(os.Getpid())
+		if err != nil {
+			t.Fatal(err)
+		}
+		proc.Signal(os.Interrupt)
+
+		r := <-result
+		if r != 1 {
+			t.Fatalf("Expected context to be cancelled by signal, got %d", r)
+		}
+	})
 }

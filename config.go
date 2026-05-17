@@ -16,12 +16,16 @@ type Config struct {
 
 	// ErrorLog is the destination for error output. By default, it is set to os.Stderr.
 	ErrorLog io.Writer
+
+	// IgnoreSignals is a slice of os.Signal to ignore. By default, command does not ignore any signals.
+	IgnoreSignals []os.Signal
 }
 
 func defaultConfig() Config {
 	return Config{
-		inherit:  true,
-		Log:      os.Stdout,
-		ErrorLog: os.Stderr,
+		inherit:      true,
+		Log:          os.Stdout,
+		ErrorLog:     os.Stderr,
+		IgnoreSignals: []os.Signal{},
 	}
 }

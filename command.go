@@ -8,7 +8,6 @@ import (
 	"os/signal"
 	"reflect"
 	"slices"
-	"syscall"
 )
 
 var (
@@ -147,8 +146,17 @@ func (cmd *Command) RunContext(ctx context.Context, args ...string) error {
 		return nil
 	}
 
-	cmdCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	var cmdCtx context.Context
+
+	if len(cmd.config.IgnoreSignals) > 0 {
+		c, stop := signal.NotifyContext(ctx, cmd.config.IgnoreSignals...)
+		defer stop()
+		cmdCtx = c
+	} else {
+		c, cancel := context.WithCancel(ctx)
+		defer cancel()
+		cmdCtx = c
+	}
 
 	err := cmd.handler(cmdCtx, args...)
 
