@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 type testContextKey string
@@ -245,7 +248,7 @@ func TestContext_Done(t *testing.T) {
 		case <-ctx.Done():
 			result <- 1
 		case <-done:
-			result <-2
+			result <- 2
 		}
 	}
 
@@ -258,7 +261,7 @@ func TestContext_Done(t *testing.T) {
 	go func() {
 		cmd.Run([]string{}...)
 	}()
-	done<-struct{}{}
+	done <- struct{}{}
 
 	r := <-result
 	if r != 2 {
@@ -277,4 +280,80 @@ func TestContext_Done(t *testing.T) {
 	if r != 1 {
 		t.Fatalf("Expected result is 2 for cancel case, but got %d", r)
 	}
+}
+
+func TestCommand_RunContext_SignalHandling(t *testing.T) {
+	t.Run("Cancel context without signal config", func(t *testing.T) {
+		done := make(chan struct{})
+		result := make(chan int)
+
+		cmd, err := NewCommand("sig-none", "Test no signal", func(ctx context.Context) {
+			select {
+			case <-ctx.Done():
+				result <- 1
+			case <-done:
+				result <- 2
+			}
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			cmd.RunContext(ctx, []string{}...)
+		}()
+
+		cancel()
+
+		r := <-result
+		if r != 1 {
+			t.Fatalf("Expected context to be cancelled, got %d", r)
+		}
+	})
+
+	t.Run("Signal with config", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Skipping signal test on Windows")
+		}
+
+		done := make(chan struct{})
+		result := make(chan int)
+
+		cmd, err := NewCommand("sig-configured", "Test with signal", func(ctx context.Context) {
+			select {
+			case <-ctx.Done():
+				result <- 1
+			case <-done:
+				result <- 2
+			}
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		var out bytes.Buffer
+		cmd.SetConfig(Config{
+			IgnoreSignals: []os.Signal{os.Interrupt},
+			Log:           &out,
+			ErrorLog:      &out,
+		})
+
+		go func() {
+			cmd.Run([]string{}...)
+		}()
+
+		time.Sleep(50 * time.Millisecond)
+
+		proc, err := os.FindProcess(os.Getpid())
+		if err != nil {
+			t.Fatal(err)
+		}
+		proc.Signal(os.Interrupt)
+
+		r := <-result
+		if r != 1 {
+			t.Fatalf("Expected context to be cancelled by signal, got %d", r)
+		}
+	})
 }
