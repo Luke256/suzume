@@ -144,7 +144,13 @@ root.Run() // go run main.go sub1 cmd
 ```
 
 ## Config
-ログの出力先などの設定は、`SetConfig` メソッドを使用して行います。
+ログの出力先やシグナルのハンドリング等の設定は、`suzume.Config`を用いて行います。
+コマンド・アプリケーションへの設定は `SetConfig` メソッドを使用して行います。
+
+`SetConfig` で明示的に設定されない限り、コマンドやアプリケーションは親の設定を継承します。
+
+### ログの設定
+ログの出力先は `suzume.Config` の `Log` フィールドで指定できます。エラーログの出力先は `ErrorLog` フィールドで指定します。
 
 ```go
 cmd.SetConfig(suzume.Config{
@@ -153,7 +159,32 @@ cmd.SetConfig(suzume.Config{
 })
 ```
 デフォルトでは、ログは標準出力に、エラーログは標準エラー出力に出力されます。
-また `SetConfig` で明示的に設定されない限り、コマンドやアプリケーションは親の設定を継承します。
+
+### シグナルのハンドリング
+`suzume.Config` の `IgnoreSignals` フィールドで指定されたシグナルは、コマンドやアプリケーションが受け取っても一度無視され、コマンドのコンテキストへ渡されます。
+
+```go
+cmd.SetConfig(suzume.Config{
+    IgnoreSignals: []os.Signal{syscall.SIGINT, syscall.SIGTERM},
+})
+```
+
+このようにすると、ユーザーが `Ctrl+C` などでプロセスを終了しようとした場合、コマンドは直ちには終了せず、`ctx.Done()` でのシグナルの受信を待つことができます。
+
+```go
+// コマンドの処理の例
+func commandFunc(ctx context.Context) error {
+    for {
+        select {
+        case <-ctx.Done():
+            // シグナルを受け取ったときのクリーンアップ処理
+            return nil
+        default:
+        }
+        // 通常の処理
+    }
+}
+```
 
 ## ヘルプの自動生成
 Suzume はコマンドの説明や引数、オプションの情報から自動的にヘルプメッセージを生成します。ユーザーは `--help` `-h` オプションを使用してヘルプを表示できます。また、アプリケーションに対しては `help` サブコマンドも自動的に追加されます。
