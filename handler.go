@@ -105,16 +105,25 @@ func createRunnerHandler[T Runner]() ([]argSpec, commandHandler, error) {
 		return nil, nil, fmt.Errorf("Runner type cannot be a pointer: %v", v)
 	}
 
-	argSpecs := make([]argSpec, v.NumField()+1)
-	argSpecs[v.NumField()] = helpArgSpec
+	argSpecs := make([]argSpec, 0, v.NumField()+1)
 
 	for i := range v.NumField() {
 		field := v.Field(i)
+
+		if !field.IsExported() {
+			continue
+		}
+
+		var aspec argSpec
+
 		if idx, err := strconv.Atoi(field.Tag.Get("cli")); err == nil {
+			// positional argument
+
 			if field.Type.Kind() == reflect.Slice {
 				return nil, nil, fmt.Errorf("slice fields cannot be used as positional arguments: %s", field.Name)
 			}
-			argSpecs[i] = argSpec{
+
+			aspec = argSpec{
 				index:     idx,
 				name:      pascalToKebab(field.Name),
 				usage:     field.Tag.Get("usage"),
@@ -122,7 +131,9 @@ func createRunnerHandler[T Runner]() ([]argSpec, commandHandler, error) {
 				typeInfo:  field.Type,
 			}
 		} else {
-			argSpecs[i] = argSpec{
+			// optional argument
+
+			aspec = argSpec{
 				index:     optionsIndex,
 				name:      field.Tag.Get("cli"),
 				short:     field.Tag.Get("short"),
@@ -131,11 +142,15 @@ func createRunnerHandler[T Runner]() ([]argSpec, commandHandler, error) {
 				typeInfo:  field.Type,
 			}
 
-			if argSpecs[i].name == "" {
-				argSpecs[i].name = pascalToKebab(field.Name)
+			if aspec.name == "" {
+				aspec.name = pascalToKebab(field.Name)
 			}
 		}
+
+		argSpecs = append(argSpecs, aspec)
 	}
+	
+	argSpecs = append(argSpecs, helpArgSpec)
 
 	sortArgSpecs(argSpecs)
 

@@ -64,6 +64,7 @@ cmd, err := suzume.NewCommand("greet", "Greet someone", func(name string, num in
 `suzume.UseCommand` を使用すると、より詳細なコマンド定義が可能になります。
 
 まず、`suzume.Runner` を実装する構造体を定義します。この構造体のフィールドはコマンドの引数やオプションを表し、タグを使用してコマンドライン引数やオプションの情報を指定します。
+(プライベートなフィールドはコマンドの引数やオプションとして認識されません)
 
 ```go
 type GreetCommand struct {
