@@ -235,3 +235,46 @@ func TestUseCommand_RejectsPointerRunnerType(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestContext_Done(t *testing.T) {
+	done := make(chan struct{})
+	result := make(chan int)
+
+	signalTestCommand := func(ctx context.Context) {
+		select {
+		case <-ctx.Done():
+			result <- 1
+		case <-done:
+			result <-2
+		}
+	}
+
+	cmd, err := NewCommand("signal", "Signal test command", signalTestCommand)
+	if err != nil {
+		t.Fatalf("unexpected error during creating command: %v", err)
+	}
+
+	// finish normally
+	go func() {
+		cmd.Run([]string{}...)
+	}()
+	done<-struct{}{}
+
+	r := <-result
+	if r != 2 {
+		t.Fatalf("Expected result is 1 for done case, but got %d", r)
+	}
+
+	// finish by context cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		cmd.RunContext(ctx, []string{}...)
+	}()
+
+	cancel()
+
+	r = <-result
+	if r != 1 {
+		t.Fatalf("Expected result is 2 for cancel case, but got %d", r)
+	}
+}
