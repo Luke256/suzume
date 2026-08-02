@@ -28,7 +28,7 @@ type App struct {
 	description string
 
 	// commands is the list of commands directly under this application.
-	commands []*Command
+	commands []*Executable
 
 	// apps is the list of sub-applications directly under this application.
 	apps []*App
@@ -47,7 +47,7 @@ func NewApp(name, description string) *App {
 }
 
 // AddCommand adds a command to the application. If the command is nil, it is ignored.
-func (app *App) AddCommand(cmd *Command) {
+func (app *App) AddCommand(cmd *Executable) {
 	if cmd != nil {
 		app.commands = append(app.commands, cmd)
 	}
@@ -198,7 +198,7 @@ func formatNameWithAliases(name string, aliases []string) string {
 	return fmt.Sprintf("%s (%s)", name, strings.Join(aliases, ", "))
 }
 
-func (app *App) findCommand(args []string) (*Command, []string, error) {
+func (app *App) findCommand(args []string) (*Executable, []string, error) {
 	if len(args) == 0 {
 		return nil, nil, ErrCommandNotFound
 	}

@@ -63,16 +63,17 @@ cmd, err := suzume.NewCommand("greet", "Greet someone", func(name string, num in
 ### `suzume.UseCommand` を使用したコマンド定義
 `suzume.UseCommand` を使用すると、より詳細なコマンド定義が可能になります。
 
-まず、`suzume.Runner` を実装する構造体を定義します。この構造体のフィールドはコマンドの引数やオプションを表し、タグを使用してコマンドライン引数やオプションの情報を指定します。
-(プライベートなフィールドはコマンドの引数やオプションとして認識されません)
+まず、`suzume.CommandDefinition` を実装する構造体を定義します。`Run()` と `Default()` はどちらもポインタレシーバーで実装します。`suzume.Command` の埋め込みは任意です。ここで定義した構造体のフィールドはコマンドの引数やオプションを表し、タグを使用してコマンドライン引数やオプションの情報を指定します。
+(埋め込んだ `suzume.Command` とプライベートなフィールドは、コマンドの引数やオプションとして認識されません)
 
 ```go
 type GreetCommand struct {
+    suzume.Command
     Name string `cli:"0" usage:"Name of the person to greet"`
     Num  int    `cli:"num" short:"n" usage:"Number of messages"`
 }
 
-func (c GreetCommand) Run(ctx context.Context) error {
+func (c *GreetCommand) Run(ctx context.Context) error {
     println("Hello,", c.Name, "you have", c.Num, "messages.")
     return nil
 }
@@ -87,21 +88,21 @@ Suzumeで使用される構造体タグは次の通りです：
 次に、`suzume.UseCommand` を使用してコマンドを定義します。
 
 ```go
-cmd, err := suzume.UseCommand[GreetCommand]("greet", "Greet someone")
+cmd, err := suzume.UseCommand[*GreetCommand]("greet", "Greet someone")
 ```
 
-引数に対してデフォルト値を明示的に指定する場合、`suzume.Defaulter` を実装することで可能になります。
+`suzume.Command` は既定で何もしない `Run()` と、ゼロ値を変更しない `Default()` を提供します。埋め込まない場合は、ポインタレシーバーの `Run()` と `Default()` を両方明示的に実装してください。
+
+引数に対してデフォルト値を明示的に指定する場合は、ポインタレシーバーの `Default()` でフィールドを設定します。
 
 ```go
-func (r GreetCommand) Default() GreetCommand {
-	return GreetCommand{
-		Num: 5,
-	}
+func (r *GreetCommand) Default() {
+	r.Num = 5
 }
 ```
 
 > [!Important]
-> `Run()` 及び `Default()` メソッドは、構造体の**値**レシーバーで定義してください。
+> `UseCommand[*GreetCommand]` のように、コマンド定義には構造体のポインタ型を指定してください。
 
 > [!Note]
 > Bool 型のフィールドはすべてフラグとして処理されますが、`--flag=false`のように明示的に値を指定した場合、その値が使用されます。

@@ -4,7 +4,7 @@ import (
 	"fmt"
 )
 
-func (cmd *Command) showHelp() {
+func (cmd *Executable) showHelp() {
 	var numArguments int
 	var numOptions int
 	var out = cmd.config.Log
