@@ -23,18 +23,26 @@ var (
 
 type commandHandler func(ctx context.Context, args ...string) error
 
-// Runner is an interface that defines a Run method, which is used for commands that can be executed.
-type Runner interface {
+// CommandDefinition defines the lifecycle methods required by UseCommand.
+type CommandDefinition interface {
+	Default()
 	Run(context.Context) error
 }
 
-// Defaulter is an interface that defines a Default method, which can be used to provide default values for command arguments.
-type Defaulter[T Runner] interface {
-	Default() T
+// Command provides optional default behavior for command definitions used with UseCommand.
+// Embed Command when a command does not need its own Default or Run implementation.
+type Command struct{}
+
+// Default leaves the command definition's zero values unchanged.
+func (*Command) Default() {}
+
+// Run performs no action.
+func (*Command) Run(context.Context) error {
+	return nil
 }
 
-// Command represents a command in the CLI application, including its name, description, handler function, argument specifications, and configuration.
-type Command struct {
+// Executable represents a configured command in the CLI application.
+type Executable struct {
 	name        string
 	aliases     []string
 	description string
@@ -53,9 +61,9 @@ type argSpec struct {
 	typeInfo  reflect.Type
 }
 
-// NewCommand creates a new Command with the given name, description, and handler function.
+// NewCommand creates a new Executable with the given name, description, and handler function.
 // The handler function can be any function that takes zero or more arguments and returns an error.
-func NewCommand(name, description string, runFunc any) (*Command, error) {
+func NewCommand(name, description string, runFunc any) (*Executable, error) {
 	if name == "" {
 		return nil, fmt.Errorf("Command name cannot be empty")
 	}
@@ -65,7 +73,7 @@ func NewCommand(name, description string, runFunc any) (*Command, error) {
 		return nil, err
 	}
 
-	return &Command{
+	return &Executable{
 		name:        name,
 		description: description,
 		handler:     handler,
@@ -74,9 +82,9 @@ func NewCommand(name, description string, runFunc any) (*Command, error) {
 	}, nil
 }
 
-// MustNewCommand is a helper function that creates a new Command and panics if an error occurs.
+// MustNewCommand creates a new Executable and panics if an error occurs.
 // It is useful for cases where the command definition is static and should not fail at runtime.
-func MustNewCommand(name, description string, runFunc any) *Command {
+func MustNewCommand(name, description string, runFunc any) *Executable {
 	cmd, err := NewCommand(name, description, runFunc)
 	if err != nil {
 		panic(err)
@@ -84,19 +92,19 @@ func MustNewCommand(name, description string, runFunc any) *Command {
 	return cmd
 }
 
-// UseCommand creates a new Command based on a Runner type.
-// It uses reflection to create a handler function that calls the Run method of the Runner, and it generates argument specifications based on the fields of the Runner struct.
-func UseCommand[T Runner](name, description string) (*Command, error) {
+// UseCommand creates a new Executable based on a CommandDefinition type.
+// Its exported fields are used to generate argument specifications.
+func UseCommand[T CommandDefinition](name, description string) (*Executable, error) {
 	if name == "" {
 		return nil, fmt.Errorf("Command name cannot be empty")
 	}
 
-	argSpecs, handler, err := createRunnerHandler[T]()
+	argSpecs, handler, err := createCommandHandler[T]()
 	if err != nil {
 		return nil, err
 	}
 
-	return &Command{
+	return &Executable{
 		name:        name,
 		description: description,
 		handler:     handler,
@@ -105,9 +113,8 @@ func UseCommand[T Runner](name, description string) (*Command, error) {
 	}, nil
 }
 
-// MustUseCommand is a helper function that creates a new Command based on a Runner type and panics if an error occurs.
-// It is useful for cases where the command definition is static and should not fail at runtime.
-func MustUseCommand[T Runner](name, description string) *Command {
+// MustUseCommand creates a new Executable based on a command definition and panics if an error occurs.
+func MustUseCommand[T CommandDefinition](name, description string) *Executable {
 	cmd, err := UseCommand[T](name, description)
 	if err != nil {
 		panic(err)
@@ -116,7 +123,7 @@ func MustUseCommand[T Runner](name, description string) *Command {
 }
 
 // Alias adds an alias for the command. If the alias name is empty, it is ignored.
-func (cmd *Command) Alias(name string) *Command {
+func (cmd *Executable) Alias(name string) *Executable {
 	if name == "" {
 		return cmd
 	}
@@ -127,12 +134,12 @@ func (cmd *Command) Alias(name string) *Command {
 
 // SetConfig sets the configuration for the command.
 // This configuration will be used when the command is executed, and it can override the configuration inherited from the parent application.
-func (cmd *Command) SetConfig(config Config) {
+func (cmd *Executable) SetConfig(config Config) {
 	cmd.config = config
 }
 
 // RunContext executes the command with the given context and arguments.
-func (cmd *Command) RunContext(ctx context.Context, args ...string) error {
+func (cmd *Executable) RunContext(ctx context.Context, args ...string) error {
 	if ctx == nil {
 		return fmt.Errorf("Context cannot be nil")
 	}
@@ -172,19 +179,19 @@ func (cmd *Command) RunContext(ctx context.Context, args ...string) error {
 }
 
 // RunContextAndExit executes the command with the given context and arguments and exits the program with a non-zero status code if an error occurs.
-func (cmd *Command) RunContextAndExit(ctx context.Context, args ...string) {
+func (cmd *Executable) RunContextAndExit(ctx context.Context, args ...string) {
 	if err := cmd.RunContext(ctx, args...); err != nil {
 		os.Exit(1)
 	}
 }
 
 // Run executes the command with a background context and the given arguments.
-func (cmd *Command) Run(args ...string) error {
+func (cmd *Executable) Run(args ...string) error {
 	return cmd.RunContext(newContext(), args...)
 }
 
 // RunAndExit executes the command with a background context and the given arguments and exits the program with a non-zero status code if an error occurs.
-func (cmd *Command) RunAndExit(args ...string) {
+func (cmd *Executable) RunAndExit(args ...string) {
 	cmd.RunContextAndExit(newContext(), args...)
 }
 

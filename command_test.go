@@ -15,6 +15,7 @@ import (
 type testContextKey string
 
 type captureRunner struct {
+	Command
 	Name    string   `cli:"0" usage:"Name"`
 	Num     int      `cli:"num" short:"n" usage:"Number"`
 	Morning bool     `cli:"morning" short:"m" usage:"Morning flag"`
@@ -23,15 +24,41 @@ type captureRunner struct {
 
 var lastCaptureRunner captureRunner
 
-func (r captureRunner) Default() captureRunner {
-	return captureRunner{
-		Num: 5,
-	}
+func (r *captureRunner) Default() {
+	r.Num = 5
 }
 
-func (r captureRunner) Run(context.Context) error {
-	lastCaptureRunner = r
+func (r *captureRunner) Run(context.Context) error {
+	lastCaptureRunner = *r
 	return nil
+}
+
+type plainRunner struct {
+	Value string `cli:"0"`
+}
+
+var lastPlainRunner plainRunner
+
+func (*plainRunner) Default() {}
+
+func (r *plainRunner) Run(context.Context) error {
+	lastPlainRunner = *r
+	return nil
+}
+
+type noOpRunner struct {
+	Command
+	Value string `cli:"0"`
+}
+
+type errorRunner struct {
+	Command
+}
+
+var errRunnerFailed = errors.New("runner failed")
+
+func (*errorRunner) Run(context.Context) error {
+	return errRunnerFailed
 }
 
 func TestNewCommand_EmptyNameReturnsError(t *testing.T) {
@@ -187,7 +214,7 @@ func TestCommand_Run_UsesBackgroundContextForContextHandler(t *testing.T) {
 func TestUseCommand_BindsValuesAndResetsBetweenRuns(t *testing.T) {
 	lastCaptureRunner = captureRunner{}
 
-	cmd, err := UseCommand[captureRunner]("notify", "Notify command")
+	cmd, err := UseCommand[*captureRunner]("notify", "Notify command")
 	if err != nil {
 		t.Fatalf("failed to create command: %v", err)
 	}
@@ -229,13 +256,47 @@ func TestUseCommand_BindsValuesAndResetsBetweenRuns(t *testing.T) {
 	}
 }
 
-func TestUseCommand_RejectsPointerRunnerType(t *testing.T) {
-	_, err := UseCommand[*captureRunner]("notify", "Notify command")
-	if err == nil {
-		t.Fatalf("expected error for pointer runner type")
+func TestUseCommand_DoesNotRequireEmbeddedCommand(t *testing.T) {
+	lastPlainRunner = plainRunner{}
+
+	cmd, err := UseCommand[*plainRunner]("plain", "Plain runner")
+	if err != nil {
+		t.Fatalf("failed to create command: %v", err)
 	}
-	if !strings.Contains(err.Error(), "Runner type cannot be a pointer") {
-		t.Fatalf("unexpected error: %v", err)
+	if err := cmd.Run("value"); err != nil {
+		t.Fatalf("failed to run command: %v", err)
+	}
+	if lastPlainRunner.Value != "value" {
+		t.Fatalf("expected bound value, got %q", lastPlainRunner.Value)
+	}
+}
+
+func TestUseCommand_EmbeddedCommandIsNotAnArgument(t *testing.T) {
+	cmd, err := UseCommand[*noOpRunner]("noop", "No-op command")
+	if err != nil {
+		t.Fatalf("failed to create command: %v", err)
+	}
+
+	if len(cmd.argSpecs) != 2 {
+		t.Fatalf("expected value and help argument specs, got %d", len(cmd.argSpecs))
+	}
+	if findSpecByName(cmd.argSpecs, "command") != nil {
+		t.Fatalf("embedded Command must not be exposed as an option")
+	}
+	if err := cmd.Run("value"); err != nil {
+		t.Fatalf("default Run implementation failed: %v", err)
+	}
+}
+
+func TestUseCommand_PropagatesRunError(t *testing.T) {
+	cmd, err := UseCommand[*errorRunner]("error", "Error command")
+	if err != nil {
+		t.Fatalf("failed to create command: %v", err)
+	}
+
+	err = cmd.Run([]string{}...)
+	if !errors.Is(err, errRunnerFailed) {
+		t.Fatalf("expected runner error, got %v", err)
 	}
 }
 
@@ -350,7 +411,7 @@ func TestCommand_RunContext_SignalHandling(t *testing.T) {
 		ready := make(chan struct{})
 
 		go func() {
-			ready<-struct{}{}
+			ready <- struct{}{}
 			cmd.Run([]string{}...)
 		}()
 

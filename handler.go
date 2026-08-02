@@ -97,19 +97,22 @@ func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
 }
 
 // args: ["arg1", "arg2", ... , "--flag", "--opt=value", "--opt", "value", "-o", "value", ...]
-func createRunnerHandler[T Runner]() ([]argSpec, commandHandler, error) {
-	v := reflect.TypeFor[T]()
-
-	// Tは構造体の値型でなければならない
-	if v.Kind() == reflect.Pointer {
-		return nil, nil, fmt.Errorf("Runner type cannot be a pointer: %v", v)
+func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, error) {
+	commandDefinitionType := reflect.TypeFor[T]()
+	if commandDefinitionType.Kind() != reflect.Pointer || commandDefinitionType.Elem().Kind() != reflect.Struct {
+		return nil, nil, fmt.Errorf("Command definition type must be a pointer to a struct: %v", commandDefinitionType)
 	}
+	structType := commandDefinitionType.Elem()
 
-	argSpecs := make([]argSpec, 0, v.NumField()+1)
+	commandType := reflect.TypeFor[Command]()
+	argSpecs := make([]argSpec, 0, structType.NumField()+1)
 
-	for i := range v.NumField() {
-		field := v.Field(i)
+	for i := range structType.NumField() {
+		field := structType.Field(i)
 
+		if field.Anonymous && field.Type == commandType {
+			continue
+		}
 		if !field.IsExported() {
 			continue
 		}
@@ -149,25 +152,25 @@ func createRunnerHandler[T Runner]() ([]argSpec, commandHandler, error) {
 
 		argSpecs = append(argSpecs, aspec)
 	}
-	
+
 	argSpecs = append(argSpecs, helpArgSpec)
 
 	sortArgSpecs(argSpecs)
 
 	return argSpecs, func(ctx context.Context, args ...string) error {
-		var runner T
-		if defaulter, ok := any(runner).(Defaulter[T]); ok {
-			runner = any(defaulter.Default()).(T)
-		}
+		runnerPointer := reflect.New(structType)
+		runner := runnerPointer.Interface().(T)
+		runnerValue := runnerPointer.Elem()
+
+		runner.Default()
 
 		if err := bindArgsToValues(args, argSpecs); err != nil {
 			return err
 		}
 
-		v := reflect.ValueOf(&runner)
 		for _, aspec := range argSpecs {
 			if aspec.value.IsValid() {
-				v.Elem().FieldByName(aspec.fieldName).Set(aspec.value)
+				runnerValue.FieldByName(aspec.fieldName).Set(aspec.value)
 			}
 		}
 
