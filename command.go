@@ -23,6 +23,8 @@ var (
 
 type commandHandler func(ctx context.Context, args ...string) error
 
+type defaultValuesProvider func() map[string]any
+
 // CommandDefinition defines the lifecycle methods required by UseCommand.
 type CommandDefinition interface {
 	Default()
@@ -43,22 +45,25 @@ func (*Command) Run(context.Context) error {
 
 // Executable represents a configured command in the CLI application.
 type Executable struct {
-	name        string
-	aliases     []string
-	description string
-	handler     commandHandler
-	argSpecs    []argSpec
-	config      Config
+	name          string
+	aliases       []string
+	description   string
+	handler       commandHandler
+	argSpecs      []argSpec
+	defaultValues defaultValuesProvider
+	config        Config
 }
 
 type argSpec struct {
-	index     int
-	name      string
-	short     string
-	usage     string
-	fieldName string
-	value     reflect.Value
-	typeInfo  reflect.Type
+	index          int
+	name           string
+	short          string
+	usage          string
+	fieldName      string
+	defaultText    string
+	hasDefaultText bool
+	value          reflect.Value
+	typeInfo       reflect.Type
 }
 
 // NewCommand creates a new Executable with the given name, description, and handler function.
@@ -99,17 +104,18 @@ func UseCommand[T CommandDefinition](name, description string) (*Executable, err
 		return nil, fmt.Errorf("Command name cannot be empty")
 	}
 
-	argSpecs, handler, err := createCommandHandler[T]()
+	argSpecs, handler, defaultValues, err := createCommandHandler[T]()
 	if err != nil {
 		return nil, err
 	}
 
 	return &Executable{
-		name:        name,
-		description: description,
-		handler:     handler,
-		argSpecs:    argSpecs,
-		config:      defaultConfig(),
+		name:          name,
+		description:   description,
+		handler:       handler,
+		argSpecs:      argSpecs,
+		defaultValues: defaultValues,
+		config:        defaultConfig(),
 	}, nil
 }
 

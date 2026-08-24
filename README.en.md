@@ -97,6 +97,7 @@ Suzume recognizes the following struct tags:
 - `cli:"0"`: Defines a positional argument. The integer is its zero-based position, so `0` means the first argument. A non-integer value defines the long option name.
 - `short:"n"`: Defines a short option name. In this example, `Num` can be set with `-n`.
 - `usage:"..."`: Describes the argument or option in generated help.
+- `default:"..."`: Overrides the default-value text shown in help without changing the runtime value. Use an empty string to hide the default value.
 
 Then create the command with `suzume.UseCommand`:
 
@@ -118,7 +119,9 @@ func (r *GreetCommand) Default() {
 > Pass a pointer-to-struct type to `UseCommand`, as in `UseCommand[*GreetCommand]`.
 
 > [!NOTE]
-> Boolean option fields behave as flags: `--flag` sets the field to `true`. Use the `--flag=false` form to set an explicit boolean value.
+> Boolean option fields behave as flags: `--flag` sets the field to `true`. Use the `--flag=false` form to set an explicit boolean value. Boolean defaults are not shown in help.
+>
+> Use `default:"..."` to customize help output for custom types or to mask/hide sensitive values. For example, `default:"from environment"` displays that text instead of the runtime value, while `default:""` hides the default value.
 
 ### Defining subcommands
 

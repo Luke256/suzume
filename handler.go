@@ -97,10 +97,10 @@ func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
 }
 
 // args: ["arg1", "arg2", ... , "--flag", "--opt=value", "--opt", "value", "-o", "value", ...]
-func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, error) {
+func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, defaultValuesProvider, error) {
 	commandDefinitionType := reflect.TypeFor[T]()
 	if commandDefinitionType.Kind() != reflect.Pointer || commandDefinitionType.Elem().Kind() != reflect.Struct {
-		return nil, nil, fmt.Errorf("Command definition type must be a pointer to a struct: %v", commandDefinitionType)
+		return nil, nil, nil, fmt.Errorf("Command definition type must be a pointer to a struct: %v", commandDefinitionType)
 	}
 	structType := commandDefinitionType.Elem()
 
@@ -123,7 +123,7 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, err
 			// positional argument
 
 			if field.Type.Kind() == reflect.Slice {
-				return nil, nil, fmt.Errorf("slice fields cannot be used as positional arguments: %s", field.Name)
+				return nil, nil, nil, fmt.Errorf("slice fields cannot be used as positional arguments: %s", field.Name)
 			}
 
 			aspec = argSpec{
@@ -144,6 +144,7 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, err
 				fieldName: field.Name,
 				typeInfo:  field.Type,
 			}
+			aspec.defaultText, aspec.hasDefaultText = field.Tag.Lookup("default")
 
 			if aspec.name == "" {
 				aspec.name = pascalToKebab(field.Name)
@@ -157,17 +158,39 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, err
 
 	sortArgSpecs(argSpecs)
 
-	return argSpecs, func(ctx context.Context, args ...string) error {
+	newRunner := func() (T, reflect.Value) {
 		runnerPointer := reflect.New(structType)
 		runner := runnerPointer.Interface().(T)
-		runnerValue := runnerPointer.Elem()
-
 		runner.Default()
+		return runner, runnerPointer.Elem()
+	}
 
+	optionFields := make([]string, 0)
+	for _, aspec := range argSpecs {
+		if aspec.index == optionsIndex && aspec.fieldName != "" &&
+			aspec.typeInfo.Kind() != reflect.Bool && !aspec.hasDefaultText {
+			optionFields = append(optionFields, aspec.fieldName)
+		}
+	}
+
+	var defaultValues defaultValuesProvider
+	if len(optionFields) > 0 {
+		defaultValues = func() map[string]any {
+			_, runnerValue := newRunner()
+			values := make(map[string]any, len(optionFields))
+			for _, fieldName := range optionFields {
+				values[fieldName] = runnerValue.FieldByName(fieldName).Interface()
+			}
+			return values
+		}
+	}
+
+	return argSpecs, func(ctx context.Context, args ...string) error {
 		if err := bindArgsToValues(args, argSpecs); err != nil {
 			return err
 		}
 
+		runner, runnerValue := newRunner()
 		for _, aspec := range argSpecs {
 			if aspec.value.IsValid() {
 				runnerValue.FieldByName(aspec.fieldName).Set(aspec.value)
@@ -175,7 +198,7 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, err
 		}
 
 		return runner.Run(ctx)
-	}, nil
+	}, defaultValues, nil
 }
 
 func sortArgSpecs(argSpecs []argSpec) {
