@@ -215,8 +215,8 @@ Usage:
   mycli [command] [args...]
 
 Commands:
-  greet                Greet someone
-  help                 Show this help message
+  greet  Greet someone
+  help   Show this help message
 ```
 
 ## ライセンス

@@ -6,26 +6,55 @@ import (
 )
 
 func (cmd *Executable) showHelp() {
-	var numArguments int
-	var numOptions int
 	var out = cmd.config.Log
 	var defaultValues map[string]any
 	if cmd.defaultValues != nil {
 		defaultValues = cmd.defaultValues()
 	}
 
+	var argumentItems []helpItem
+	var optionItems []helpItem
+
 	fmt.Fprintf(out, "Usage: %s", cmd.name)
 	for _, arg := range cmd.argSpecs {
 		if arg.index >= 0 {
 			fmt.Fprintf(out, " <%s>", arg.name)
-			numArguments++
-		} else {
-			if arg.short != "" {
-				fmt.Fprintf(out, " [-%s|--%s]", arg.short, arg.name)
-			} else if arg.name != "" {
-				fmt.Fprintf(out, " [--%s]", arg.name)
+			argumentItems = append(argumentItems, helpItem{
+				label:       arg.name,
+				description: arg.usage,
+			})
+			continue
+		}
+
+		if arg.short != "" {
+			fmt.Fprintf(out, " [-%s|--%s]", arg.short, arg.name)
+		} else if arg.name != "" {
+			fmt.Fprintf(out, " [--%s]", arg.name)
+		}
+
+		if arg.index != optionsIndex {
+			continue
+		}
+
+		usage := arg.usage
+		defaultText, showDefault := optionDefaultText(arg, defaultValues)
+		if showDefault {
+			if usage != "" {
+				usage += " "
 			}
-			numOptions++
+			usage += fmt.Sprintf("(default: %s)", defaultText)
+		}
+
+		if arg.short != "" {
+			optionItems = append(optionItems, helpItem{
+				label:       fmt.Sprintf("-%s, --%s", arg.short, arg.name),
+				description: usage,
+			})
+		} else if arg.name != "" {
+			optionItems = append(optionItems, helpItem{
+				label:       fmt.Sprintf("    --%s", arg.name),
+				description: usage,
+			})
 		}
 	}
 	fmt.Fprintln(out)
@@ -34,35 +63,14 @@ func (cmd *Executable) showHelp() {
 		fmt.Fprintln(out, cmd.description)
 	}
 
-	if numArguments > 0 {
+	if len(argumentItems) > 0 {
 		fmt.Fprintln(out, "\nArguments:")
-		for _, arg := range cmd.argSpecs {
-			if arg.index >= 0 {
-				fmt.Fprintf(out, "  %s\t%s\n", arg.name, arg.usage)
-			}
-		}
+		writeHelpItems(out, argumentItems)
 	}
 
-	if numOptions > 0 {
+	if len(optionItems) > 0 {
 		fmt.Fprintln(out, "\nOptions:")
-		for _, arg := range cmd.argSpecs {
-			if arg.index == optionsIndex {
-				usage := arg.usage
-				defaultText, showDefault := optionDefaultText(arg, defaultValues)
-				if showDefault {
-					if usage != "" {
-						usage += " "
-					}
-					usage += fmt.Sprintf("(default: %s)", defaultText)
-				}
-
-				if arg.short != "" {
-					fmt.Fprintf(out, "  -%s, --%s\t%s\n", arg.short, arg.name, usage)
-				} else if arg.name != "" {
-					fmt.Fprintf(out, "      --%s\t%s\n", arg.name, usage)
-				}
-			}
-		}
+		writeHelpItems(out, optionItems)
 	}
 }
 

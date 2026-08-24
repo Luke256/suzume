@@ -154,21 +154,33 @@ func (app *App) showHelp() {
 		fmt.Fprintf(out, "\nAliases:\n  %s\n", strings.Join(app.aliases, ", "))
 	}
 
-	if len(app.commands) > 0 {
-		fmt.Fprintln(out, "\nCommands:")
-		for _, cmd := range app.commands {
-			fmt.Fprintf(out, "  %-20s %s\n", formatNameWithAliases(cmd.name, cmd.aliases), cmd.description)
-		}
+	commandItems := make([]helpItem, 0, len(app.commands)+1)
+	for _, cmd := range app.commands {
+		commandItems = append(commandItems, helpItem{
+			label:       formatNameWithAliases(cmd.name, cmd.aliases),
+			description: cmd.description,
+		})
 	}
+	commandItems = append(commandItems, helpItem{
+		label:       "help",
+		description: "Show this help message",
+	})
+
+	fmt.Fprintln(out, "\nCommands:")
+	writeHelpItems(out, commandItems)
 
 	if len(app.apps) > 0 {
-		fmt.Fprintln(out, "\nSubcommands:")
+		subcommandItems := make([]helpItem, 0, len(app.apps))
 		for _, subApp := range app.apps {
-			fmt.Fprintf(out, "  %-20s %s\n", formatNameWithAliases(subApp.name, subApp.aliases), subApp.description)
+			subcommandItems = append(subcommandItems, helpItem{
+				label:       formatNameWithAliases(subApp.name, subApp.aliases),
+				description: subApp.description,
+			})
 		}
-	}
 
-	fmt.Fprintln(out, "  help                 Show this help message")
+		fmt.Fprintln(out, "\nSubcommands:")
+		writeHelpItems(out, subcommandItems)
+	}
 }
 
 func (app *App) fullPath() string {

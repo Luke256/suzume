@@ -71,7 +71,7 @@ func TestApp_Run_ShowsHelpOnNoArgs(t *testing.T) {
 	if !strings.Contains(help, "Usage:\n  mycli [command] [args...]") {
 		t.Fatalf("expected app help usage in output, got: %q", help)
 	}
-	if !strings.Contains(help, "help                 Show this help message") {
+	if !strings.Contains(help, "help  Show this help message") {
 		t.Fatalf("expected builtin help command in output, got: %q", help)
 	}
 	if errOut.Len() != 0 {
