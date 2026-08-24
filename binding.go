@@ -9,35 +9,6 @@ import (
 )
 
 func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
-	switch argType.Kind() {
-	case reflect.String:
-		return reflect.ValueOf(arg), nil
-	case reflect.Int:
-		v, err := strconv.Atoi(arg)
-		if err != nil {
-			return reflect.Value{}, fmt.Errorf("%w: expected an integer, got %q", ErrInvalidArgument, arg)
-		}
-		return reflect.ValueOf(v), nil
-	case reflect.Int64:
-		v, err := strconv.ParseInt(arg, 10, 64)
-		if err != nil {
-			return reflect.Value{}, fmt.Errorf("%w: expected an integer, got %q", ErrInvalidArgument, arg)
-		}
-		return reflect.ValueOf(v), nil
-	case reflect.Float64:
-		v, err := strconv.ParseFloat(arg, 64)
-		if err != nil {
-			return reflect.Value{}, fmt.Errorf("%w: expected a float, got %q", ErrInvalidArgument, arg)
-		}
-		return reflect.ValueOf(v), nil
-	case reflect.Bool:
-		v, err := strconv.ParseBool(arg)
-		if err != nil {
-			return reflect.Value{}, fmt.Errorf("%w: expected a boolean, got %q", ErrInvalidArgument, arg)
-		}
-		return reflect.ValueOf(v), nil
-	}
-
 	textUnmarshalerType := reflect.TypeFor[encoding.TextUnmarshaler]()
 	if reflect.PointerTo(argType).Implements(textUnmarshalerType) {
 		value := reflect.New(argType)
@@ -57,7 +28,46 @@ func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
 		return value, nil
 	}
 
-	return reflect.Value{}, fmt.Errorf("unsupported argument type: %v", argType)
+	value := reflect.New(argType).Elem()
+
+	switch argType.Kind() {
+	case reflect.String:
+		value.SetString(arg)
+	case reflect.Bool:
+		v, err := strconv.ParseBool(arg)
+		if err != nil {
+			return reflect.Value{}, fmt.Errorf("%w: expected a boolean, got %q", ErrInvalidArgument, arg)
+		}
+		value.SetBool(v)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v, err := strconv.ParseInt(arg, 10, argType.Bits())
+		if err != nil {
+			return reflect.Value{}, fmt.Errorf("%w: expected an integer, got %q", ErrInvalidArgument, arg)
+		}
+		value.SetInt(v)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		v, err := strconv.ParseUint(arg, 10, argType.Bits())
+		if err != nil {
+			return reflect.Value{}, fmt.Errorf("%w: expected an unsigned integer, got %q", ErrInvalidArgument, arg)
+		}
+		value.SetUint(v)
+	case reflect.Float32, reflect.Float64:
+		v, err := strconv.ParseFloat(arg, argType.Bits())
+		if err != nil {
+			return reflect.Value{}, fmt.Errorf("%w: expected a float, got %q", ErrInvalidArgument, arg)
+		}
+		value.SetFloat(v)
+	case reflect.Complex64, reflect.Complex128:
+		v, err := strconv.ParseComplex(arg, argType.Bits())
+		if err != nil {
+			return reflect.Value{}, fmt.Errorf("%w: expected a complex number, got %q", ErrInvalidArgument, arg)
+		}
+		value.SetComplex(v)
+	default:
+		return reflect.Value{}, fmt.Errorf("unsupported argument type: %v", argType)
+	}
+
+	return value, nil
 }
 
 // 引数列を、argSpecsのvaluesに割り当てる
@@ -87,7 +97,8 @@ func bindArgsToValues(args []string, argSpecs []argSpec) error {
 				aspec.value = value
 			}
 		} else if aspec.typeInfo.Kind() == reflect.Bool {
-			aspec.value = reflect.ValueOf(true)
+			aspec.value = reflect.New(aspec.typeInfo).Elem()
+			aspec.value.SetBool(true)
 		} else {
 			targetArg = aspec
 		}
