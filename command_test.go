@@ -45,6 +45,14 @@ type helpDefaultsRunner struct {
 	Level   helpLevel `cli:"level" usage:"Execution level" default:"high"`
 }
 
+type helpAlignmentRunner struct {
+	Command
+	Source               string `cli:"0" usage:"Source file"`
+	DestinationDirectory string `cli:"1" usage:"Destination directory"`
+	Force                bool   `cli:"force" short:"f" usage:"Overwrite existing files"`
+	Validate             bool   `cli:"validate-before-writing" usage:"Validate before writing"`
+}
+
 var helpDefaultsCalls int
 var helpDefaultsRunCalled bool
 
@@ -153,10 +161,10 @@ func TestUseCommand_HelpShowsOptionDefaultValues(t *testing.T) {
 
 	help := out.String()
 	for _, expected := range []string{
-		"-c, --count\tNumber of retries (default: 3)",
-		"--mode\tExecution mode (default: from configuration)",
-		"--tag\tTags (default: [stable fast])",
-		"--level\tExecution level (default: high)",
+		"  -c, --count    Number of retries (default: 3)",
+		"      --mode     Execution mode (default: from configuration)",
+		"      --tag      Tags (default: [stable fast])",
+		"      --level    Execution level (default: high)",
 	} {
 		if !strings.Contains(help, expected) {
 			t.Errorf("expected help to contain %q, got: %q", expected, help)
@@ -179,6 +187,50 @@ func TestUseCommand_HelpShowsOptionDefaultValues(t *testing.T) {
 	}
 	if helpDefaultsRunCalled {
 		t.Fatalf("expected Run not to be called when help is requested")
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("expected no stderr output, got: %q", errOut.String())
+	}
+}
+
+func TestUseCommand_HelpAlignsDescriptions(t *testing.T) {
+	cmd, err := UseCommand[*helpAlignmentRunner]("copy", "Copy files")
+	if err != nil {
+		t.Fatalf("failed to create command: %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+
+	if err := cmd.Run("--help"); err != nil {
+		t.Fatalf("expected no error: %v", err)
+	}
+
+	help := out.String()
+	descriptionColumn := func(description string) int {
+		for _, line := range strings.Split(help, "\n") {
+			if column := strings.Index(line, description); column >= 0 {
+				return column
+			}
+		}
+		return -1
+	}
+
+	sourceColumn := descriptionColumn("Source file")
+	destinationColumn := descriptionColumn("Destination directory")
+	if sourceColumn < 0 || sourceColumn != destinationColumn {
+		t.Fatalf("expected argument descriptions to align, got: %q", help)
+	}
+
+	forceColumn := descriptionColumn("Overwrite existing files")
+	validateColumn := descriptionColumn("Validate before writing")
+	if forceColumn < 0 || forceColumn != validateColumn {
+		t.Fatalf("expected option descriptions to align, got: %q", help)
+	}
+
+	if strings.Contains(help, "\t") {
+		t.Fatalf("expected tabs to be expanded in help output, got: %q", help)
 	}
 	if errOut.Len() != 0 {
 		t.Fatalf("expected no stderr output, got: %q", errOut.String())
