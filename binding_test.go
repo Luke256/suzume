@@ -19,6 +19,18 @@ func (l *lowerText) UnmarshalText(text []byte) error {
 	return nil
 }
 
+type country int
+
+const countryJapan country = 81
+
+func (c *country) UnmarshalText(text []byte) error {
+	if string(text) != "JP" {
+		return errors.New("unknown country")
+	}
+	*c = countryJapan
+	return nil
+}
+
 func TestParseArg_Primitives(t *testing.T) {
 	t.Parallel()
 
@@ -56,6 +68,18 @@ func TestParseArg_TextUnmarshaler(t *testing.T) {
 	}
 	if got := val.Interface().(lowerText); got.value != "hello" {
 		t.Fatalf("expected lowerText.value to be hello, got %q", got.value)
+	}
+}
+
+func TestParseArg_TextUnmarshalerTakesPriorityOverUnderlyingType(t *testing.T) {
+	t.Parallel()
+
+	val, err := parseArg("JP", reflect.TypeFor[country]())
+	if err != nil {
+		t.Fatalf("failed to parse named primitive type: %v", err)
+	}
+	if got := val.Interface().(country); got != countryJapan {
+		t.Fatalf("expected countryJapan, got %d", got)
 	}
 }
 

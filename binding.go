@@ -9,6 +9,25 @@ import (
 )
 
 func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
+	textUnmarshalerType := reflect.TypeFor[encoding.TextUnmarshaler]()
+	if reflect.PointerTo(argType).Implements(textUnmarshalerType) {
+		value := reflect.New(argType)
+		unmarshaler := value.Interface().(encoding.TextUnmarshaler)
+		if err := unmarshaler.UnmarshalText([]byte(arg)); err != nil {
+			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %v", ErrInvalidArgument, err)
+		}
+		return value.Elem(), nil
+	}
+
+	if argType.Implements(textUnmarshalerType) {
+		value := reflect.New(argType).Elem()
+		unmarshaler := value.Interface().(encoding.TextUnmarshaler)
+		if err := unmarshaler.UnmarshalText([]byte(arg)); err != nil {
+			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %v", ErrInvalidArgument, err)
+		}
+		return value, nil
+	}
+
 	switch argType.Kind() {
 	case reflect.String:
 		return reflect.ValueOf(arg), nil
@@ -36,25 +55,6 @@ func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
 			return reflect.Value{}, fmt.Errorf("%w: expected a boolean, got %q", ErrInvalidArgument, arg)
 		}
 		return reflect.ValueOf(v), nil
-	}
-
-	textUnmarshalerType := reflect.TypeFor[encoding.TextUnmarshaler]()
-	if reflect.PointerTo(argType).Implements(textUnmarshalerType) {
-		value := reflect.New(argType)
-		unmarshaler := value.Interface().(encoding.TextUnmarshaler)
-		if err := unmarshaler.UnmarshalText([]byte(arg)); err != nil {
-			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %v", ErrInvalidArgument, err)
-		}
-		return value.Elem(), nil
-	}
-
-	if argType.Implements(textUnmarshalerType) {
-		value := reflect.New(argType).Elem()
-		unmarshaler := value.Interface().(encoding.TextUnmarshaler)
-		if err := unmarshaler.UnmarshalText([]byte(arg)); err != nil {
-			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %v", ErrInvalidArgument, err)
-		}
-		return value, nil
 	}
 
 	return reflect.Value{}, fmt.Errorf("unsupported argument type: %v", argType)
