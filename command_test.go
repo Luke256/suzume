@@ -33,6 +33,36 @@ func (r *captureRunner) Run(context.Context) error {
 	return nil
 }
 
+type helpLevel int
+
+type helpDefaultsRunner struct {
+	Command
+	Count   int       `cli:"count" short:"c" usage:"Number of retries"`
+	Mode    string    `cli:"mode" usage:"Execution mode" default:"from configuration"`
+	Token   string    `cli:"token" usage:"API token" default:""`
+	Verbose bool      `cli:"verbose" short:"v" usage:"Verbose output"`
+	Tags    []string  `cli:"tag" usage:"Tags"`
+	Level   helpLevel `cli:"level" usage:"Execution level" default:"high"`
+}
+
+var helpDefaultsCalls int
+var helpDefaultsRunCalled bool
+
+func (r *helpDefaultsRunner) Default() {
+	helpDefaultsCalls++
+	r.Count = 3
+	r.Mode = "safe"
+	r.Token = "secret-token"
+	r.Verbose = true
+	r.Tags = []string{"stable", "fast"}
+	r.Level = 2
+}
+
+func (*helpDefaultsRunner) Run(context.Context) error {
+	helpDefaultsRunCalled = true
+	return nil
+}
+
 type plainRunner struct {
 	Value string `cli:"0"`
 }
@@ -98,6 +128,88 @@ func TestCommand_Run_HelpSkipsHandler(t *testing.T) {
 	}
 	if errOut.Len() != 0 {
 		t.Fatalf("expected no stderr output, got: %q", errOut.String())
+	}
+}
+
+func TestUseCommand_HelpShowsOptionDefaultValues(t *testing.T) {
+	helpDefaultsCalls = 0
+	helpDefaultsRunCalled = false
+
+	cmd, err := UseCommand[*helpDefaultsRunner]("run", "Run command")
+	if err != nil {
+		t.Fatalf("failed to create command: %v", err)
+	}
+	if helpDefaultsCalls != 0 {
+		t.Fatalf("expected Default not to be called during command creation")
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+
+	if err := cmd.Run("--help"); err != nil {
+		t.Fatalf("expected no error: %v", err)
+	}
+
+	help := out.String()
+	for _, expected := range []string{
+		"-c, --count\tNumber of retries (default: 3)",
+		"--mode\tExecution mode (default: from configuration)",
+		"--tag\tTags (default: [stable fast])",
+		"--level\tExecution level (default: high)",
+	} {
+		if !strings.Contains(help, expected) {
+			t.Errorf("expected help to contain %q, got: %q", expected, help)
+		}
+	}
+	for _, unexpected := range []string{
+		"API token (default:",
+		"secret-token",
+		"Verbose output (default:",
+		"Execution mode (default: safe)",
+		"Execution level (default: 2)",
+		"Show this help message (default:",
+	} {
+		if strings.Contains(help, unexpected) {
+			t.Errorf("expected help not to contain %q, got: %q", unexpected, help)
+		}
+	}
+	if helpDefaultsCalls != 1 {
+		t.Fatalf("expected Default to be called once for help, got %d", helpDefaultsCalls)
+	}
+	if helpDefaultsRunCalled {
+		t.Fatalf("expected Run not to be called when help is requested")
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("expected no stderr output, got: %q", errOut.String())
+	}
+}
+
+func TestUseCommand_InvalidArgumentCallsDefaultOnce(t *testing.T) {
+	helpDefaultsCalls = 0
+	helpDefaultsRunCalled = false
+
+	cmd, err := UseCommand[*helpDefaultsRunner]("run", "Run command")
+	if err != nil {
+		t.Fatalf("failed to create command: %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+
+	err = cmd.Run("--count", "invalid")
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("expected ErrInvalidArgument, got: %v", err)
+	}
+	if helpDefaultsCalls != 1 {
+		t.Fatalf("expected Default to be called once, got %d", helpDefaultsCalls)
+	}
+	if helpDefaultsRunCalled {
+		t.Fatalf("expected Run not to be called for invalid arguments")
+	}
+	if !strings.Contains(out.String(), "Usage: run") {
+		t.Fatalf("expected help output, got: %q", out.String())
 	}
 }
 
