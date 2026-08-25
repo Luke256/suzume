@@ -21,6 +21,16 @@ func validateIdentifier(identifier string) error {
 	return nil
 }
 
+func validateOptionIdentifier(identifier string) error {
+	if err := validateIdentifier(identifier); err != nil {
+		return err
+	}
+	if strings.Contains(identifier, "=") {
+		return fmt.Errorf("%w: identifier %q cannot contain '='", ErrInvalidIdentifier, identifier)
+	}
+	return nil
+}
+
 func registerIdentifiers(identifiers map[string]struct{}, name string, aliases ...string) error {
 	pending := make(map[string]struct{}, len(aliases)+1)
 	if _, exists := identifiers[name]; exists {

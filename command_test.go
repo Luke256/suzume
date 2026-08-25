@@ -3,6 +3,7 @@ package suzume
 import (
 	"bytes"
 	"context"
+	"encoding"
 	"errors"
 	"os"
 	"reflect"
@@ -702,8 +703,8 @@ func TestUseCommand_RejectsArgumentTagCollisions(t *testing.T) {
 			create: func() error {
 				_, err := UseCommand[*struct {
 					Command
-					First  string `cli:"value"`
-					Second string `cli:"second" short:"value"`
+					First  string `cli:"v"`
+					Second string `cli:"second" short:"v"`
 				}]("test", "Test command")
 				return err
 			},
@@ -713,7 +714,7 @@ func TestUseCommand_RejectsArgumentTagCollisions(t *testing.T) {
 			create: func() error {
 				_, err := UseCommand[*struct {
 					Command
-					Value string `cli:"value" short:"value"`
+					Value string `cli:"v" short:"v"`
 				}]("test", "Test command")
 				return err
 			},
@@ -744,6 +745,109 @@ func TestUseCommand_RejectsArgumentTagCollisions(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if err := test.create(); !errors.Is(err, ErrDuplicateIdentifier) {
 				t.Fatalf("expected duplicate identifier error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestUseCommand_RejectsUnsupportedFieldTypes(t *testing.T) {
+	tests := []struct {
+		name   string
+		create func() error
+	}{
+		{
+			name: "positional argument",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value map[string]string `cli:"0"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "option",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value map[string]string `cli:"value"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "slice option element",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value []map[string]string `cli:"value"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "interface option",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value encoding.TextUnmarshaler `cli:"value"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.create()
+			if err == nil || !strings.Contains(err.Error(), "unsupported command field type") {
+				t.Fatalf("expected unsupported field type error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestUseCommand_RejectsInvalidOptionIdentifiers(t *testing.T) {
+	tests := []struct {
+		name   string
+		create func() error
+	}{
+		{
+			name: "hyphen-prefixed long name",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value string `cli:"-bad"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "valued long name",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value string `cli:"bad=value"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "hyphen-prefixed short name",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value string `cli:"value" short:"-v"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.create(); !errors.Is(err, ErrInvalidIdentifier) {
+				t.Fatalf("expected invalid identifier error, got %v", err)
 			}
 		})
 	}

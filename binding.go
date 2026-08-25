@@ -9,6 +9,10 @@ import (
 )
 
 func supportsArgumentType(argType reflect.Type) bool {
+	if argType.Kind() == reflect.Interface {
+		return false
+	}
+
 	textUnmarshalerType := reflect.TypeFor[encoding.TextUnmarshaler]()
 	if reflect.PointerTo(argType).Implements(textUnmarshalerType) || argType.Implements(textUnmarshalerType) {
 		return true
@@ -16,6 +20,7 @@ func supportsArgumentType(argType reflect.Type) bool {
 
 	switch argType.Kind() {
 	case reflect.String,
+		reflect.Bool,
 		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
 		reflect.Float32, reflect.Float64,

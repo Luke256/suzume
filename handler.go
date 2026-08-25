@@ -33,7 +33,7 @@ func pascalToKebab(s string) string {
 			}
 
 			if unicode.IsLower(prev) ||
-			   unicode.IsDigit(prev) ||
+				unicode.IsDigit(prev) ||
 				(unicode.IsUpper(prev) && hasNext && unicode.IsLower(next)) {
 				sb.WriteRune('-')
 			}
@@ -190,6 +190,25 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, def
 
 			if aspec.name == "" {
 				aspec.name = pascalToKebab(field.Name)
+			}
+		}
+
+		valueType := field.Type
+		if valueType.Kind() == reflect.Slice {
+			valueType = valueType.Elem()
+		}
+		if !supportsArgumentType(valueType) {
+			return nil, nil, nil, fmt.Errorf("unsupported command field type %v: field %s", field.Type, field.Name)
+		}
+
+		if aspec.index == optionsIndex {
+			if err := validateOptionIdentifier(aspec.name); err != nil {
+				return nil, nil, nil, fmt.Errorf("invalid long option name for field %s: %w", field.Name, err)
+			}
+			if aspec.short != "" {
+				if err := validateOptionIdentifier(aspec.short); err != nil {
+					return nil, nil, nil, fmt.Errorf("invalid short option name for field %s: %w", field.Name, err)
+				}
 			}
 		}
 
