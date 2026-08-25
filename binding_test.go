@@ -25,6 +25,12 @@ type namedInt16 int16
 
 type namedBool bool
 
+type failingPointerText string
+
+type failingValueText string
+
+var errTextUnmarshal = errors.New("text unmarshaling failed")
+
 const countryJapan country = 81
 
 func (c *country) UnmarshalText(text []byte) error {
@@ -33,6 +39,14 @@ func (c *country) UnmarshalText(text []byte) error {
 	}
 	*c = countryJapan
 	return nil
+}
+
+func (*failingPointerText) UnmarshalText([]byte) error {
+	return errTextUnmarshal
+}
+
+func (failingValueText) UnmarshalText([]byte) error {
+	return errTextUnmarshal
 }
 
 func TestParseArg_Primitives(t *testing.T) {
@@ -147,6 +161,32 @@ func TestParseArg_TextUnmarshalerTakesPriorityOverUnderlyingType(t *testing.T) {
 	}
 }
 
+func TestParseArg_PreservesTextUnmarshalerError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		typeInfo reflect.Type
+	}{
+		{name: "pointer receiver", typeInfo: reflect.TypeFor[failingPointerText]()},
+		{name: "value receiver", typeInfo: reflect.TypeFor[failingValueText]()},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := parseArg("invalid", test.typeInfo)
+			if !errors.Is(err, ErrInvalidArgument) {
+				t.Fatalf("expected ErrInvalidArgument, got %v", err)
+			}
+			if !errors.Is(err, errTextUnmarshal) {
+				t.Fatalf("expected text unmarshaler error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestBindArgsToValues_BindsPositionalAndOptions(t *testing.T) {
 	t.Parallel()
 
@@ -225,6 +265,51 @@ func TestBindArgsToValues_MissingOptionValue(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing value for option: count") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBindArgsToValues_PreservesParseArgError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		args  []string
+		specs []argSpec
+	}{
+		{
+			name:  "positional argument",
+			args:  []string{"invalid"},
+			specs: []argSpec{{index: 0, name: "value", typeInfo: reflect.TypeFor[failingPointerText]()}},
+		},
+		{
+			name:  "valued option",
+			args:  []string{"--value=invalid"},
+			specs: []argSpec{{index: -1, name: "value", typeInfo: reflect.TypeFor[failingPointerText]()}},
+		},
+		{
+			name:  "option argument",
+			args:  []string{"--value", "invalid"},
+			specs: []argSpec{{index: -1, name: "value", typeInfo: reflect.TypeFor[failingPointerText]()}},
+		},
+		{
+			name:  "slice option argument",
+			args:  []string{"--value", "invalid"},
+			specs: []argSpec{{index: -1, name: "value", typeInfo: reflect.TypeFor[[]failingPointerText]()}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := bindArgsToValues(test.args, test.specs)
+			if !errors.Is(err, ErrInvalidArgument) {
+				t.Fatalf("expected ErrInvalidArgument, got %v", err)
+			}
+			if !errors.Is(err, errTextUnmarshal) {
+				t.Fatalf("expected parse argument error, got %v", err)
+			}
+		})
 	}
 }
 

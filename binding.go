@@ -14,7 +14,7 @@ func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
 		value := reflect.New(argType)
 		unmarshaler := value.Interface().(encoding.TextUnmarshaler)
 		if err := unmarshaler.UnmarshalText([]byte(arg)); err != nil {
-			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %v", ErrInvalidArgument, err)
+			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %w", ErrInvalidArgument, err)
 		}
 		return value.Elem(), nil
 	}
@@ -23,7 +23,7 @@ func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
 		value := reflect.New(argType).Elem()
 		unmarshaler := value.Interface().(encoding.TextUnmarshaler)
 		if err := unmarshaler.UnmarshalText([]byte(arg)); err != nil {
-			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %v", ErrInvalidArgument, err)
+			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %w", ErrInvalidArgument, err)
 		}
 		return value, nil
 	}
@@ -83,7 +83,7 @@ func bindArgsToValues(args []string, argSpecs []argSpec) ([]reflect.Value, error
 
 			value, err := parseArg(parts[1], aspec.typeInfo)
 			if err != nil {
-				return fmt.Errorf("%w: failed to parse option %q: %v", ErrInvalidArgument, parts[0], err)
+				return fmt.Errorf("%w: failed to parse option %q: %w", ErrInvalidArgument, parts[0], err)
 			}
 
 			if aspec.typeInfo.Kind() == reflect.Slice {
@@ -120,7 +120,7 @@ func bindArgsToValues(args []string, argSpecs []argSpec) ([]reflect.Value, error
 
 				value, err := parseArg(arg, argSpecs[positionalIndex].typeInfo)
 				if err != nil {
-					return nil, fmt.Errorf("%w: failed to parse argument %d: %v", ErrInvalidArgument, positionalIndex+1, err)
+					return nil, fmt.Errorf("%w: failed to parse argument %d: %w", ErrInvalidArgument, positionalIndex+1, err)
 				}
 				values[positionalIndex] = value
 				positionalIndex++
@@ -136,7 +136,7 @@ func bindArgsToValues(args []string, argSpecs []argSpec) ([]reflect.Value, error
 				// スライスの追加
 				value, err := parseArg(arg, argSpecs[targetIndex].typeInfo.Elem())
 				if err != nil {
-					return nil, fmt.Errorf("%w: failed to parse argument %q: %v", ErrInvalidArgument, arg, err)
+					return nil, fmt.Errorf("%w: failed to parse argument %q: %w", ErrInvalidArgument, arg, err)
 				}
 
 				if !values[targetIndex].IsValid() {
@@ -149,7 +149,7 @@ func bindArgsToValues(args []string, argSpecs []argSpec) ([]reflect.Value, error
 			// オプション引数
 			value, err := parseArg(arg, argSpecs[targetIndex].typeInfo)
 			if err != nil {
-				return nil, fmt.Errorf("%w: failed to parse argument %q: %v", ErrInvalidArgument, arg, err)
+				return nil, fmt.Errorf("%w: failed to parse argument %q: %w", ErrInvalidArgument, arg, err)
 			}
 			values[targetIndex] = value
 			targetIndex = -1
