@@ -93,6 +93,18 @@ type errorRunner struct {
 	Command
 }
 
+type valuedHelpRunner struct {
+	Command
+	Value string `cli:"0"`
+}
+
+var valuedHelpRunnerCalls int
+
+func (*valuedHelpRunner) Run(context.Context) error {
+	valuedHelpRunnerCalls++
+	return nil
+}
+
 var errRunnerFailed = errors.New("runner failed")
 
 func (*errorRunner) Run(context.Context) error {
@@ -136,6 +148,56 @@ func TestCommand_Run_HelpSkipsHandler(t *testing.T) {
 	}
 	if errOut.Len() != 0 {
 		t.Fatalf("expected no stderr output, got: %q", errOut.String())
+	}
+}
+
+func TestCommand_Run_RejectsValuedHelpOptions(t *testing.T) {
+	for _, arg := range []string{"--help=false", "--help=true", "--help=", "-h=false"} {
+		t.Run(arg, func(t *testing.T) {
+			var called bool
+			cmd := MustNewCommand("ping", "Ping command", func(string) error {
+				called = true
+				return nil
+			})
+
+			assertValuedHelpOptionRejected(t, cmd, arg)
+			if called {
+				t.Fatal("expected function handler not to be called")
+			}
+		})
+	}
+}
+
+func TestUseCommand_Run_RejectsValuedHelpOptions(t *testing.T) {
+	for _, arg := range []string{"--help=false", "--help=true", "--help=", "-h=false"} {
+		t.Run(arg, func(t *testing.T) {
+			valuedHelpRunnerCalls = 0
+			cmd := MustUseCommand[*valuedHelpRunner]("ping", "Ping command")
+
+			assertValuedHelpOptionRejected(t, cmd, arg)
+			if valuedHelpRunnerCalls != 0 {
+				t.Fatalf("expected command runner not to be called, got %d calls", valuedHelpRunnerCalls)
+			}
+		})
+	}
+}
+
+func assertValuedHelpOptionRejected(t *testing.T, cmd *Executable, arg string) {
+	t.Helper()
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
+
+	err := cmd.Run(arg)
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("expected ErrInvalidArgument, got: %v", err)
+	}
+	if !strings.Contains(errOut.String(), "unknown option") || !strings.Contains(errOut.String(), arg) {
+		t.Fatalf("expected unknown option error for %q, got: %q", arg, errOut.String())
+	}
+	if !strings.Contains(out.String(), "Usage: ping") {
+		t.Fatalf("expected command help after invalid option, got: %q", out.String())
 	}
 }
 

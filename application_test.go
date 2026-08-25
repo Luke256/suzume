@@ -99,6 +99,72 @@ func TestApp_Run_UnknownCommandWritesErrorAndHelp(t *testing.T) {
 	}
 }
 
+func TestApp_Run_RejectsValuedHelpOptions(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		invalidArg string
+	}{
+		{name: "long false", args: []string{"--help=false"}, invalidArg: "--help=false"},
+		{name: "long true", args: []string{"--help=true"}, invalidArg: "--help=true"},
+		{name: "long empty", args: []string{"--help="}, invalidArg: "--help="},
+		{name: "short false", args: []string{"-h=false"}, invalidArg: "-h=false"},
+		{name: "after long help", args: []string{"--help", "--help=false"}, invalidArg: "--help=false"},
+		{name: "after short help", args: []string{"-h", "-h=true"}, invalidArg: "-h=true"},
+		{name: "after help command", args: []string{"help", "--help="}, invalidArg: "--help="},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var out bytes.Buffer
+			var errOut bytes.Buffer
+			app := NewApp("mycli", "A test CLI")
+			app.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
+
+			err := app.Run(test.args...)
+			if !errors.Is(err, ErrInvalidArgument) {
+				t.Fatalf("expected ErrInvalidArgument, got: %v", err)
+			}
+			if errors.Is(err, ErrCommandNotFound) {
+				t.Fatalf("expected an invalid option rather than an unknown command: %v", err)
+			}
+			if !strings.Contains(errOut.String(), "unknown option") || !strings.Contains(errOut.String(), test.invalidArg) {
+				t.Fatalf("expected unknown option error for %q, got: %q", test.invalidArg, errOut.String())
+			}
+			if !strings.Contains(out.String(), "Usage:\n  mycli [command] [args...]") {
+				t.Fatalf("expected app help after invalid option, got: %q", out.String())
+			}
+		})
+	}
+}
+
+func TestApp_Run_SubAppRejectsValuedHelpOption(t *testing.T) {
+	for _, args := range [][]string{
+		{"child", "--help=false"},
+		{"child", "--help", "--help=false"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var out bytes.Buffer
+			var errOut bytes.Buffer
+			root := NewApp("root", "Root app")
+			child := NewApp("child", "Child app")
+			root.AddApp(child)
+			root.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
+
+			err := root.Run(args...)
+			if !errors.Is(err, ErrInvalidArgument) {
+				t.Fatalf("expected ErrInvalidArgument, got: %v", err)
+			}
+			if !strings.Contains(errOut.String(), `unknown option "--help=false"`) {
+				t.Fatalf("expected unknown option error, got: %q", errOut.String())
+			}
+			if !strings.Contains(out.String(), "Usage:\n  root child [command] [args...]") {
+				t.Fatalf("expected scoped sub-app help after invalid option, got: %q", out.String())
+			}
+		})
+	}
+}
+
 func TestApp_Run_SubAppHelpShowsScopedPath(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer

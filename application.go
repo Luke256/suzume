@@ -85,7 +85,15 @@ func (app *App) runContext(ctx context.Context, inheritedConfig *config, args ..
 	configuration := app.resolveConfig(inheritedConfig)
 	args = app.resolveArgs(args)
 
-	if shouldShowAppHelp(args) {
+	showHelp, invalidHelpArg := inspectAppHelpArgs(args)
+	if invalidHelpArg != "" {
+		resolvedConfig := materializeConfig(configuration)
+		err := unknownOptionError(invalidHelpArg)
+		fmt.Fprintln(resolvedConfig.errorLog, err)
+		app.showHelp(resolvedConfig)
+		return err
+	}
+	if showHelp {
 		app.showHelp(materializeConfig(configuration))
 		return nil
 	}
@@ -138,12 +146,23 @@ func (app *App) resolveArgs(args []string) []string {
 	return args
 }
 
-func shouldShowAppHelp(args []string) bool {
+func inspectAppHelpArgs(args []string) (showHelp bool, invalidArg string) {
 	if len(args) == 0 {
-		return true
+		return true, ""
+	}
+	if isValuedHelpArg(args[0]) {
+		return false, args[0]
+	}
+	if args[0] != "help" && args[0] != "--help" && args[0] != "-h" {
+		return false, ""
 	}
 
-	return args[0] == "help" || args[0] == "--help" || args[0] == "-h"
+	for _, arg := range args[1:] {
+		if isValuedHelpArg(arg) {
+			return false, arg
+		}
+	}
+	return true, ""
 }
 
 func (app *App) showHelp(configuration config) {

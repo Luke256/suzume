@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
-	"slices"
+	"strings"
 )
 
 var (
@@ -157,7 +157,11 @@ func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *config, 
 		args = os.Args[1:]
 	}
 
-	if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
+	showHelp, invalidHelpArg := inspectHelpArgs(args)
+	if invalidHelpArg != "" {
+		return cmd.handleRunError(unknownOptionError(invalidHelpArg), config)
+	}
+	if showHelp {
 		cmd.showHelp(config)
 		return nil
 	}
@@ -175,16 +179,39 @@ func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *config, 
 	}
 
 	err := cmd.handler(cmdCtx, args...)
-
 	if err != nil {
-		if errors.Is(err, ErrInvalidArgument) {
-			fmt.Fprintln(config.errorLog, err)
-			cmd.showHelp(config)
-		}
-		return err
+		return cmd.handleRunError(err, config)
 	}
 
 	return nil
+}
+
+func (cmd *Executable) handleRunError(err error, config config) error {
+	if errors.Is(err, ErrInvalidArgument) {
+		fmt.Fprintln(config.errorLog, err)
+		cmd.showHelp(config)
+	}
+	return err
+}
+
+func inspectHelpArgs(args []string) (showHelp bool, invalidArg string) {
+	for _, arg := range args {
+		if isValuedHelpArg(arg) {
+			return false, arg
+		}
+		if arg == "--help" || arg == "-h" {
+			showHelp = true
+		}
+	}
+	return showHelp, ""
+}
+
+func isValuedHelpArg(arg string) bool {
+	return strings.HasPrefix(arg, "--help=") || strings.HasPrefix(arg, "-h=")
+}
+
+func unknownOptionError(arg string) error {
+	return fmt.Errorf("%w: unknown option %q", ErrInvalidArgument, arg)
 }
 
 func (cmd *Executable) resolveConfig(inheritedConfig *config) *config {
