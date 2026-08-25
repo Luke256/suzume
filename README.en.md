@@ -123,6 +123,8 @@ func (r *GreetCommand) Default() {
 > [!NOTE]
 > Boolean option fields behave as flags: `--flag` sets the field to `true`. Use the `--flag=false` form to set an explicit boolean value. Boolean defaults are not shown in help.
 >
+> Slice options accept multiple following values in the separated form, such as `--tag stable fast`. The valued form, such as `--tag=stable`, produces a one-element slice containing only the specified value.
+>
 > Use `default:"..."` to customize help output for custom types or to mask/hide sensitive values. For example, `default:"from environment"` displays that text instead of the runtime value, while `default:""` hides the default value.
 
 ### Defining subcommands

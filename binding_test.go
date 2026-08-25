@@ -219,6 +219,35 @@ func TestBindArgsToValues_BindsPositionalAndOptions(t *testing.T) {
 	}
 }
 
+func TestBindArgsToValues_BindsSliceOption(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		want []country
+	}{
+		{name: "separated", args: []string{"--country", "JP"}, want: []country{countryJapan}},
+		{name: "valued", args: []string{"--country=JP"}, want: []country{countryJapan}},
+		{name: "valued replaces accumulated values", args: []string{"--country", "JP", "--country=JP"}, want: []country{countryJapan}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			specs := []argSpec{{index: -1, name: "country", typeInfo: reflect.TypeFor[[]country]()}}
+			values, err := bindArgsToValues(test.args, specs)
+			if err != nil {
+				t.Fatalf("bind failed: %v", err)
+			}
+			if got := values[0].Interface().([]country); !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("expected %#v, got %#v", test.want, got)
+			}
+		})
+	}
+}
+
 func TestBindArgsToValues_BoolExplicitFalse(t *testing.T) {
 	t.Parallel()
 

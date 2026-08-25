@@ -80,17 +80,18 @@ func bindArgsToValues(args []string, argSpecs []argSpec) ([]reflect.Value, error
 		aspec := argSpecs[specIndex]
 		if strings.Contains(arg, "=") {
 			parts := strings.SplitN(arg, "=", 2)
+			valueType := aspec.typeInfo
+			if valueType.Kind() == reflect.Slice {
+				valueType = valueType.Elem()
+			}
 
-			value, err := parseArg(parts[1], aspec.typeInfo)
+			value, err := parseArg(parts[1], valueType)
 			if err != nil {
 				return fmt.Errorf("%w: failed to parse option %q: %w", ErrInvalidArgument, parts[0], err)
 			}
 
 			if aspec.typeInfo.Kind() == reflect.Slice {
-				if !values[specIndex].IsValid() {
-					values[specIndex] = reflect.MakeSlice(aspec.typeInfo, 0, 0)
-				}
-				values[specIndex] = reflect.Append(values[specIndex], value)
+				values[specIndex] = reflect.Append(reflect.MakeSlice(aspec.typeInfo, 0, 1), value)
 			} else {
 				values[specIndex] = value
 			}
