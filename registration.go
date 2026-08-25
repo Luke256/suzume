@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	// ErrDuplicateIdentifier indicates that a command or sub-application identifier is already registered.
+	// ErrDuplicateIdentifier indicates that an identifier is already registered.
 	ErrDuplicateIdentifier = errors.New("duplicated identifier")
 
 	// ErrInvalidIdentifier indicates that an identifier is invalid.

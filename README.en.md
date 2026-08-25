@@ -98,10 +98,12 @@ func (c *GreetCommand) Run(ctx context.Context) error {
 
 Suzume recognizes the following struct tags:
 
-- `cli:"0"`: Defines a positional argument. The integer is its zero-based position, so `0` means the first argument. A non-integer value defines the long option name.
+- `cli:"0"`: Defines a positional argument's order with a non-negative integer. Arguments are processed from the smallest value, while a non-integer value defines the long option name.
 - `short:"n"`: Defines a short option name. In this example, `Num` can be set with `-n`.
 - `usage:"..."`: Describes the argument or option in generated help.
 - `default:"..."`: Overrides the default-value text shown in help without changing the runtime value. Use an empty string to hide the default value.
+
+Positional arguments are processed in ascending order of their non-negative integer indexes. Option names and short names must not be duplicated, including across the two forms. The built-in help identifiers `help` and `h` are reserved. `UseCommand` rejects invalid tags when the command is created.
 
 Then create the command with `suzume.UseCommand`:
 

@@ -122,6 +122,10 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, def
 
 	commandType := reflect.TypeFor[Command]()
 	argSpecs := make([]argSpec, 0, structType.NumField()+1)
+	identifiers := map[string]struct{}{
+		helpArgSpec.name:  {},
+		helpArgSpec.short: {},
+	}
 
 	for i := range structType.NumField() {
 		field := structType.Field(i)
@@ -137,6 +141,9 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, def
 
 		if idx, err := strconv.Atoi(field.Tag.Get("cli")); err == nil {
 			// positional argument
+			if idx < 0 {
+				return nil, nil, nil, fmt.Errorf("invalid positional argument index %d for field %s", idx, field.Name)
+			}
 
 			if field.Type.Kind() == reflect.Slice {
 				return nil, nil, nil, fmt.Errorf("slice fields cannot be used as positional arguments: %s", field.Name)
@@ -165,6 +172,17 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, def
 			if aspec.name == "" {
 				aspec.name = pascalToKebab(field.Name)
 			}
+		}
+
+		aliases := []string(nil)
+		if aspec.short != "" {
+			if aspec.short == aspec.name {
+				return nil, nil, nil, fmt.Errorf("invalid argument tags for field %s: %w: %s", field.Name, ErrDuplicateIdentifier, aspec.name)
+			}
+			aliases = append(aliases, aspec.short)
+		}
+		if err := registerIdentifiers(identifiers, aspec.name, aliases...); err != nil {
+			return nil, nil, nil, fmt.Errorf("invalid argument tags for field %s: %w", field.Name, err)
 		}
 
 		argSpecs = append(argSpecs, aspec)

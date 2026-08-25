@@ -623,6 +623,129 @@ func TestUseCommand_DoesNotRequireEmbeddedCommand(t *testing.T) {
 	}
 }
 
+func TestUseCommand_RejectsArgumentTagCollisions(t *testing.T) {
+	tests := []struct {
+		name   string
+		create func() error
+	}{
+		{
+			name: "long names",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					First  string `cli:"value"`
+					Second string `cli:"value"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "short names",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					First  string `cli:"first" short:"v"`
+					Second string `cli:"second" short:"v"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "long and short names",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					First  string `cli:"value"`
+					Second string `cli:"second" short:"value"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "long and short name on the same field",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value string `cli:"value" short:"value"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "built-in long help name",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Help bool `cli:"help"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "built-in short help name",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Help bool `cli:"show-help" short:"h"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.create(); !errors.Is(err, ErrDuplicateIdentifier) {
+				t.Fatalf("expected duplicate identifier error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestUseCommand_SortsSparsePositionalIndexes(t *testing.T) {
+	cmd, err := UseCommand[*struct {
+		Command
+		Zero  string `cli:"0"`
+		Five  string `cli:"5"`
+		Three string `cli:"3"`
+		Seven string `cli:"7"`
+	}]("test", "Test command")
+	if err != nil {
+		t.Fatalf("expected sparse positional indexes to be accepted, got %v", err)
+	}
+
+	var got []int
+	for _, spec := range cmd.argSpecs {
+		if spec.index >= 0 {
+			got = append(got, spec.index)
+		}
+	}
+	if want := []int{0, 3, 5, 7}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected positional indexes %v, got %v", want, got)
+	}
+}
+
+func TestUseCommand_AllowsDuplicatePositionalIndexes(t *testing.T) {
+	_, err := UseCommand[*struct {
+		Command
+		First  string `cli:"0"`
+		Second string `cli:"0"`
+	}]("test", "Test command")
+	if err != nil {
+		t.Fatalf("expected duplicate positional indexes to be accepted with unspecified order, got %v", err)
+	}
+}
+
+func TestUseCommand_RejectsNegativePositionalIndex(t *testing.T) {
+	_, err := UseCommand[*struct {
+		Command
+		Value string `cli:"-1"`
+	}]("test", "Test command")
+	if err == nil {
+		t.Fatal("expected negative positional index error")
+	}
+}
+
 func TestUseCommand_EmbeddedCommandIsNotAnArgument(t *testing.T) {
 	cmd, err := UseCommand[*noOpRunner]("noop", "No-op command")
 	if err != nil {
