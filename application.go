@@ -34,7 +34,7 @@ type App struct {
 	apps []App
 
 	// config holds an explicitly assigned configuration. A nil value inherits from the parent.
-	config *config
+	config *Config
 
 	// identifiers holds the set of identifiers for this application, used for collision detection.
 	identifiers map[string]struct{}
@@ -114,8 +114,8 @@ func (app *App) Alias(name string) error {
 	return nil
 }
 
-// SetConfig sets the configuration for the application. This configuration will be inherited by sub-applications and commands unless they have their own configuration set.
-func (app *App) SetConfig(configuration config) {
+// SetConfig sets the application's Config. This configuration will be inherited by sub-applications and commands unless they have their own configuration set.
+func (app *App) SetConfig(configuration Config) {
 	app.config = &configuration
 }
 
@@ -126,7 +126,7 @@ func (app *App) RunContext(ctx context.Context, args ...string) error {
 	return app.runContext(ctx, nil, args...)
 }
 
-func (app *App) runContext(ctx context.Context, inheritedConfig *config, args ...string) error {
+func (app *App) runContext(ctx context.Context, inheritedConfig *Config, args ...string) error {
 	configuration := app.resolveConfig(inheritedConfig)
 	args = app.resolveArgs(args)
 
@@ -160,7 +160,7 @@ func (app *App) runContext(ctx context.Context, inheritedConfig *config, args ..
 	return subApp.runContext(ctx, configuration, subArgs...)
 }
 
-func (app *App) resolveConfig(inheritedConfig *config) *config {
+func (app *App) resolveConfig(inheritedConfig *Config) *Config {
 	if app.config != nil {
 		return app.config
 	}
@@ -210,7 +210,7 @@ func inspectAppHelpArgs(args []string) (showHelp bool, invalidArg string) {
 	return true, ""
 }
 
-func (app *App) showHelp(configuration config) {
+func (app *App) showHelp(configuration Config) {
 	out := configuration.log
 	appPath := app.fullPath()
 	fmt.Fprintf(out, "%s\n\n", appPath)

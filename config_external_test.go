@@ -9,6 +9,26 @@ import (
 	"github.com/Luke256/suzume"
 )
 
+func TestConfigAPI_ConfigCanBeNamedAndComposed(t *testing.T) {
+	var out bytes.Buffer
+	newConfig := func() suzume.Config {
+		return suzume.NewConfig(suzume.WithLog(&out))
+	}
+	holder := struct {
+		Config suzume.Config
+	}{Config: newConfig()}
+
+	app := suzume.MustNewApp("external", "External config API")
+	app.SetConfig(holder.Config)
+
+	if err := app.Run([]string{}...); err != nil {
+		t.Fatalf("expected app help to succeed: %v", err)
+	}
+	if !strings.Contains(out.String(), "Usage:\n  external [command] [args...]") {
+		t.Fatalf("expected configured app log, got: %q", out.String())
+	}
+}
+
 func TestConfigAPI_NewConfigIsUsableFromExternalPackage(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer

@@ -9,13 +9,13 @@ import (
 )
 
 var (
-	_ func() config                   = DefaultConfig
-	_ func(...ConfigOption) config    = NewConfig
+	_ func() Config                   = DefaultConfig
+	_ func(...ConfigOption) Config    = NewConfig
 	_ func(io.Writer) ConfigOption    = WithLog
 	_ func(io.Writer) ConfigOption    = WithErrorLog
 	_ func(...os.Signal) ConfigOption = WithIgnoreSignals
-	_ func(*App, config)              = (*App).SetConfig
-	_ func(*Executable, config)       = (*Executable).SetConfig
+	_ func(*App, Config)              = (*App).SetConfig
+	_ func(*Executable, Config)       = (*Executable).SetConfig
 )
 
 func TestDefaultConfig_UsesStandardStreams(t *testing.T) {

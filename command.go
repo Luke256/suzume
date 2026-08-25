@@ -51,7 +51,7 @@ type Executable struct {
 	handler       commandHandler
 	argSpecs      []argSpec
 	defaultValues defaultValuesProvider
-	config        *config
+	config        *Config
 }
 
 type argSpec struct {
@@ -149,9 +149,9 @@ func (cmd *Executable) Alias(name string) error {
 	return nil
 }
 
-// SetConfig sets the configuration for the command.
+// SetConfig sets the command's Config.
 // This configuration will be used when the command is executed, and it can override the configuration inherited from the parent application.
-func (cmd *Executable) SetConfig(configuration config) {
+func (cmd *Executable) SetConfig(configuration Config) {
 	cmd.config = &configuration
 }
 
@@ -160,7 +160,7 @@ func (cmd *Executable) RunContext(ctx context.Context, args ...string) error {
 	return cmd.runContext(ctx, nil, args...)
 }
 
-func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *config, args ...string) error {
+func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *Config, args ...string) error {
 	if ctx == nil {
 		return fmt.Errorf("Context cannot be nil")
 	}
@@ -199,7 +199,7 @@ func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *config, 
 	return nil
 }
 
-func (cmd *Executable) handleRunError(err error, config config) error {
+func (cmd *Executable) handleRunError(err error, config Config) error {
 	if errors.Is(err, ErrInvalidArgument) {
 		fmt.Fprintln(config.errorLog, err)
 		cmd.showHelp(config)
@@ -227,7 +227,7 @@ func unknownOptionError(arg string) error {
 	return fmt.Errorf("%w: unknown option %q", ErrInvalidArgument, arg)
 }
 
-func (cmd *Executable) resolveConfig(inheritedConfig *config) *config {
+func (cmd *Executable) resolveConfig(inheritedConfig *Config) *Config {
 	if cmd.config != nil {
 		return cmd.config
 	}
