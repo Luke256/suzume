@@ -13,7 +13,7 @@ func TestApp_Run_ExecutesCommand(t *testing.T) {
 
 	var val int
 
-	app := NewApp("testapp", "A test application")
+	app := MustNewApp("testapp", "A test application")
 	cmd, err := NewCommand("hoge", "test command", func() error {
 		val = 42
 		return nil
@@ -36,7 +36,7 @@ func TestApp_Run_ExecutesCommand(t *testing.T) {
 func TestApp_Run_ResolvesCommandAlias(t *testing.T) {
 	var called bool
 
-	app := NewApp("testapp", "A test application")
+	app := MustNewApp("testapp", "A test application")
 	cmd, err := NewCommand("notify", "notify command", func() error {
 		called = true
 		return nil
@@ -44,7 +44,9 @@ func TestApp_Run_ResolvesCommandAlias(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create command: %v", err)
 	}
-	cmd.Alias("n")
+	if err := cmd.Alias("n"); err != nil {
+		t.Fatalf("failed to add alias: %v", err)
+	}
 	app.AddCommand(cmd)
 
 	if err := app.Run("n"); err != nil {
@@ -60,7 +62,7 @@ func TestApp_Run_ShowsHelpOnNoArgs(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 
-	app := NewApp("mycli", "A test CLI")
+	app := MustNewApp("mycli", "A test CLI")
 	app.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	if err := app.Run([]string{}...); err != nil {
@@ -83,7 +85,7 @@ func TestApp_Run_UnknownCommandWritesErrorAndHelp(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 
-	app := NewApp("mycli", "A test CLI")
+	app := MustNewApp("mycli", "A test CLI")
 	app.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	err := app.Run("missing")
@@ -118,7 +120,7 @@ func TestApp_Run_RejectsValuedHelpOptions(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var out bytes.Buffer
 			var errOut bytes.Buffer
-			app := NewApp("mycli", "A test CLI")
+			app := MustNewApp("mycli", "A test CLI")
 			app.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 			err := app.Run(test.args...)
@@ -146,8 +148,8 @@ func TestApp_Run_SubAppRejectsValuedHelpOption(t *testing.T) {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var out bytes.Buffer
 			var errOut bytes.Buffer
-			root := NewApp("root", "Root app")
-			child := NewApp("child", "Child app")
+			root := MustNewApp("root", "Root app")
+			child := MustNewApp("child", "Child app")
 			root.AddApp(child)
 			root.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
@@ -169,8 +171,8 @@ func TestApp_Run_SubAppHelpShowsScopedPath(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 
-	root := NewApp("root", "Root app")
-	child := NewApp("child", "Child app")
+	root := MustNewApp("root", "Root app")
+	child := MustNewApp("child", "Child app")
 	root.AddApp(child)
 	root.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
@@ -191,7 +193,7 @@ func TestApp_Run_InheritsConfigToCommand(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 
-	app := NewApp("root", "Root app")
+	app := MustNewApp("root", "Root app")
 	app.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	cmd, err := NewCommand("echo", "Echo command", func(name string) error {
@@ -218,7 +220,7 @@ func TestApp_Run_InheritsErrorConfigToCommand(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 
-	app := NewApp("root", "Root app")
+	app := MustNewApp("root", "Root app")
 	app.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 	app.AddCommand(MustNewCommand("count", "Count command", func(int) error { return nil }))
 
@@ -238,11 +240,11 @@ func TestApp_Run_InheritsConfigThroughNestedApps(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 
-	root := NewApp("root", "Root app")
+	root := MustNewApp("root", "Root app")
 	root.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
-	child := NewApp("child", "Child app")
-	grandchild := NewApp("grandchild", "Grandchild app")
+	child := MustNewApp("child", "Child app")
+	grandchild := MustNewApp("grandchild", "Grandchild app")
 	cmd := MustNewCommand("echo", "Echo command", func() error { return nil })
 
 	grandchild.AddCommand(cmd)
@@ -267,12 +269,12 @@ func TestApp_Run_ExplicitConfigOverridesInheritedConfig(t *testing.T) {
 	var commandOut bytes.Buffer
 	var errOut bytes.Buffer
 
-	root := NewApp("root", "Root app")
+	root := MustNewApp("root", "Root app")
 	root.SetConfig(NewConfig(WithLog(&rootOut), WithErrorLog(&errOut)))
 
-	child := NewApp("child", "Child app")
+	child := MustNewApp("child", "Child app")
 	child.SetConfig(NewConfig(WithLog(&childOut), WithErrorLog(&errOut)))
-	grandchild := NewApp("grandchild", "Grandchild app")
+	grandchild := MustNewApp("grandchild", "Grandchild app")
 
 	inherited := MustNewCommand("inherited", "Inherited command", func() error { return nil })
 	overridden := MustNewCommand("overridden", "Overridden command", func() error { return nil })
@@ -313,9 +315,9 @@ func TestApp_Run_SharedCommandUsesEachAppConfig(t *testing.T) {
 	var secondOut bytes.Buffer
 	var secondErrOut bytes.Buffer
 
-	first := NewApp("first", "First app")
+	first := MustNewApp("first", "First app")
 	first.SetConfig(NewConfig(WithLog(&firstOut), WithErrorLog(&firstErrOut)))
-	second := NewApp("second", "Second app")
+	second := MustNewApp("second", "Second app")
 	second.SetConfig(NewConfig(WithLog(&secondOut), WithErrorLog(&secondErrOut)))
 
 	shared := MustNewCommand("shared", "Shared command", func() error { return nil })
@@ -346,8 +348,8 @@ func TestApp_Run_SharedCommandUsesEachAppConfig(t *testing.T) {
 func TestApp_SubAppAlias(t *testing.T) {
 	var called bool
 
-	root := NewApp("root", "Root app")
-	child := NewApp("child", "Child app")
+	root := MustNewApp("root", "Root app")
+	child := MustNewApp("child", "Child app")
 
 	cmd, err := NewCommand("run", "Run command", func() error {
 		called = true
@@ -357,7 +359,9 @@ func TestApp_SubAppAlias(t *testing.T) {
 		t.Fatalf("failed to create command: %v", err)
 	}
 	child.AddCommand(cmd)
-	child.Alias("c")
+	if err := child.Alias("c"); err != nil {
+		t.Fatalf("failed to add alias: %v", err)
+	}
 
 	root.AddApp(child)
 
@@ -373,7 +377,7 @@ func TestApp_SubAppAlias(t *testing.T) {
 func TestApp_Context(t *testing.T) {
 	var gotVal int
 
-	app := NewApp("testapp", "A test application")
+	app := MustNewApp("testapp", "A test application")
 	cmd := MustNewCommand("hoge", "test command", func(ctx context.Context) error {
 		gotVal = ctx.Value("key").(int)
 		return nil

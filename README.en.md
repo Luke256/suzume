@@ -125,7 +125,7 @@ func (r *GreetCommand) Default() {
 
 ### Defining subcommands
 
-Create an application with `suzume.NewApp`, then add commands with `AddCommand`:
+Create an application with `suzume.NewApp`, then add commands with `AddCommand`. For static application names, you can also use `suzume.MustNewApp`, which panics if creation fails:
 
 ```go
 cmd1, _ := suzume.NewCommand("foo", "bar", func() error {
@@ -138,11 +138,17 @@ cmd2, _ := suzume.NewCommand("hoge", "fuga", func() error {
     return nil
 })
 
-app := suzume.NewApp("myapp", "My CLI Application")
-app.AddCommand(cmd1) // myapp foo
-app.AddCommand(cmd2) // myapp hoge
+app := suzume.MustNewApp("myapp", "My CLI Application")
+if err := app.AddCommand(cmd1); err != nil { // myapp foo
+    panic(err)
+}
+if err := app.AddCommand(cmd2); err != nil { // myapp hoge
+    panic(err)
+}
 app.Run()
 ```
+
+`AddCommand` and `AddApp` register a copy of the command or sub-application as it exists when the method is called. Configure aliases, settings, and children before adding them. Structural changes made to the original command or sub-application afterward are not reflected in the registered application. Command, sub-application, and alias names cannot begin with `-`.
 
 > [!IMPORTANT]
 > An application may contain any number of commands and sub-applications, but **the application itself cannot be executed as a command**. This is an intentional constraint: applications are designed to act as hubs for subcommands. If an application were executable, the `subcmd` part of an invocation such as `myapp subcmd` would be ambiguous—it could be either a positional argument or a subcommand.
@@ -152,14 +158,18 @@ app.Run()
 Subcommands can contain further subcommands, allowing you to build complex command hierarchies:
 
 ```go
-root := suzume.NewApp("root", "Root Command")
-sub1 := suzume.NewApp("sub1", "Sub Command 1")
+root := suzume.MustNewApp("root", "Root Command")
+sub1 := suzume.MustNewApp("sub1", "Sub Command 1")
 cmd, _ := suzume.NewCommand("cmd", "A command", func() error {
     // do something
     return nil
 })
-sub1.AddCommand(cmd) // root sub1 cmd
-root.AddApp(sub1)
+if err := sub1.AddCommand(cmd); err != nil { // root sub1 cmd
+    panic(err)
+}
+if err := root.AddApp(sub1); err != nil {
+    panic(err)
+}
 root.Run() // go run main.go sub1 cmd
 ```
 

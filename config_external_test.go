@@ -19,7 +19,7 @@ func TestConfigAPI_NewConfigIsUsableFromExternalPackage(t *testing.T) {
 	}
 	cfg := suzume.NewConfig(options...)
 
-	app := suzume.NewApp("external", "External config API")
+	app := suzume.MustNewApp("external", "External config API")
 	app.SetConfig(cfg)
 
 	if err := app.Run([]string{}...); err != nil {
@@ -61,7 +61,7 @@ func TestConfigAPI_DefaultConfigIsUsableFromExternalPackage(t *testing.T) {
 	})
 	cmd.SetConfig(suzume.DefaultConfig())
 
-	app := suzume.NewApp("external", "External config API")
+	app := suzume.MustNewApp("external", "External config API")
 	app.SetConfig(suzume.DefaultConfig())
 	app.AddCommand(cmd)
 

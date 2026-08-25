@@ -68,9 +68,13 @@ type argSpec struct {
 
 // NewCommand creates a new Executable with the given name, description, and handler function.
 // The handler function can be any function that takes zero or more arguments and returns an error.
+// Command names beginning with a hyphen are rejected.
 func NewCommand(name, description string, runFunc any) (*Executable, error) {
 	if name == "" {
 		return nil, fmt.Errorf("Command name cannot be empty")
+	}
+	if err := validateIdentifier(name); err != nil {
+		return nil, err
 	}
 
 	argSpecs, handler, err := createFunctionHandler(runFunc)
@@ -98,9 +102,13 @@ func MustNewCommand(name, description string, runFunc any) *Executable {
 
 // UseCommand creates a new Executable based on a CommandDefinition type.
 // Its exported fields are used to generate argument specifications.
+// Command names beginning with a hyphen are rejected.
 func UseCommand[T CommandDefinition](name, description string) (*Executable, error) {
 	if name == "" {
 		return nil, fmt.Errorf("Command name cannot be empty")
+	}
+	if err := validateIdentifier(name); err != nil {
+		return nil, err
 	}
 
 	argSpecs, handler, defaultValues, err := createCommandHandler[T]()
@@ -127,13 +135,17 @@ func MustUseCommand[T CommandDefinition](name, description string) *Executable {
 }
 
 // Alias adds an alias for the command. If the alias name is empty, it is ignored.
-func (cmd *Executable) Alias(name string) *Executable {
+// Alias names beginning with a hyphen are rejected.
+func (cmd *Executable) Alias(name string) error {
 	if name == "" {
-		return cmd
+		return nil
+	}
+	if err := validateIdentifier(name); err != nil {
+		return err
 	}
 
 	cmd.aliases = append(cmd.aliases, name)
-	return cmd
+	return nil
 }
 
 // SetConfig sets the configuration for the command.

@@ -13,7 +13,7 @@ var (
 	ErrCommandNotFound = errors.New("Command not found")
 )
 
-// App represents a CLI application that can contain commands and sub-applications.
+// App represents a CLI App that can contain commands and sub-applications.
 type App struct {
 	// appPath is the path of parent applications leading to this app, used for help message generation.
 	appPath []string
@@ -28,45 +28,90 @@ type App struct {
 	description string
 
 	// commands is the list of commands directly under this application.
-	commands []*Executable
+	commands []Executable
 
 	// apps is the list of sub-applications directly under this application.
-	apps []*App
+	apps []App
 
 	// config holds an explicitly assigned configuration. A nil value inherits from the parent.
 	config *config
+
+	// identifiers holds the set of identifiers for this application, used for collision detection.
+	identifiers map[string]struct{}
 }
 
 // NewApp creates a new App with the given name and description.
-func NewApp(name, description string) *App {
+// App names beginning with a hyphen are rejected.
+func NewApp(name, description string) (*App, error) {
+	if err := validateIdentifier(name); err != nil {
+		return nil, err
+	}
+
 	return &App{
 		name:        name,
 		description: description,
-	}
+		identifiers: map[string]struct{}{
+			"help": {},
+		},
+	}, nil
 }
 
-// AddCommand adds a command to the application. If the command is nil, it is ignored.
-func (app *App) AddCommand(cmd *Executable) {
-	if cmd != nil {
-		app.commands = append(app.commands, cmd)
+// MustNewApp creates a new App and panics if an error occurs.
+func MustNewApp(name, description string) *App {
+	app, err := NewApp(name, description)
+	if err != nil {
+		panic(err)
 	}
+	return app
 }
 
-// AddApp adds a sub-application to the application. If the sub-application is nil, it is ignored.
-func (app *App) AddApp(subApp *App) {
-	if subApp != nil {
-		app.apps = append(app.apps, subApp)
+// AddCommand adds a value copy of a command to the application. If the command is nil, it is ignored.
+// Its registration identifiers are fixed at the time of the call.
+// It returns ErrDuplicateIdentifier when an identifier is already registered.
+func (app *App) AddCommand(cmd *Executable) error {
+	if cmd == nil {
+		return nil
 	}
+
+	if err := registerIdentifiers(app.identifiers, cmd.name, cmd.aliases...); err != nil {
+		return fmt.Errorf("failed to register command: %w", err)
+	}
+
+	registered := *cmd
+	app.commands = append(app.commands, registered)
+
+	return nil
+}
+
+// AddApp adds a value copy of a sub-application. If the sub-application is nil, it is ignored.
+// Its registration identifiers are fixed at the time of the call.
+// It returns ErrDuplicateIdentifier when an identifier is already registered.
+func (app *App) AddApp(subApp *App) error {
+	if subApp == nil {
+		return nil
+	}
+
+	if err := registerIdentifiers(app.identifiers, subApp.name, subApp.aliases...); err != nil {
+		return fmt.Errorf("failed to register app: %w", err)
+	}
+
+	registered := *subApp
+	app.apps = append(app.apps, registered)
+	return nil
 }
 
 // Alias adds an alias for the application. If the alias name is empty, it is ignored.
-func (app *App) Alias(name string) *App {
+// Alias names beginning with a hyphen are rejected.
+func (app *App) Alias(name string) error {
 	if name == "" {
-		return app
+		return nil
+	}
+	if err := validateIdentifier(name); err != nil {
+		return err
 	}
 
 	app.aliases = append(app.aliases, name)
-	return app
+	return nil
 }
 
 // SetConfig sets the configuration for the application. This configuration will be inherited by sub-applications and commands unless they have their own configuration set.
@@ -242,7 +287,8 @@ func (app *App) findCommand(args []string) (*Executable, []string, error) {
 
 	var head string = args[0]
 
-	for _, cmd := range app.commands {
+	for i := range app.commands {
+		cmd := &app.commands[i]
 		if matchesName(cmd.name, cmd.aliases, head) {
 			return cmd, args[1:], nil
 		}
@@ -258,7 +304,8 @@ func (app *App) findSubApp(args []string) (*App, []string, error) {
 
 	var head string = args[0]
 
-	for _, subApp := range app.apps {
+	for i := range app.apps {
+		subApp := &app.apps[i]
 		if matchesName(subApp.name, subApp.aliases, head) {
 			return app.scopedSubApp(subApp), args[1:], nil
 		}

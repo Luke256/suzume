@@ -116,7 +116,7 @@ func (r *GreetCommand) Default() {
 > 独自の型の表示やデフォルト値を表示させたくない場合などには `default:"..."` を使用してください。例えば `default:"from environment"` は実値の代わりに指定した文字列を表示し、特に`default:""` はデフォルト値の表示を抑止します。
 
 ### サブコマンドの定義
-サブコマンドを作成するには、`suzume.NewApp` を使用してアプリケーションを作成し、`AddCommand` メソッドでコマンドを追加します。
+サブコマンドを作成するには、`suzume.NewApp` を使用してアプリケーションを作成し、`AddCommand` メソッドでコマンドを追加します。静的なアプリケーション名には、作成に失敗するとpanicする `suzume.MustNewApp` も使用できます。
 
 ```go
 cmd1, _ := suzume.NewCommand("foo", "bar", func() error {
@@ -129,11 +129,17 @@ cmd2, _ := suzume.NewCommand("hoge", "fuga", func() error {
     return nil
 })
 
-app := suzume.NewApp("myapp", "My CLI Application")
-app.AddCommand(cmd1) // myapp foo
-app.AddCommand(cmd2) // myapp hoge
+app := suzume.MustNewApp("myapp", "My CLI Application")
+if err := app.AddCommand(cmd1); err != nil { // myapp foo
+    panic(err)
+}
+if err := app.AddCommand(cmd2); err != nil { // myapp hoge
+    panic(err)
+}
 app.Run()
 ```
+
+`AddCommand` と `AddApp` は、呼び出された時点のコマンドやサブアプリケーションをコピーして登録します。エイリアス、設定、子要素は追加前に構成してください。追加後に元のコマンドやサブアプリケーションの構造を変更しても、登録済みのアプリケーションには反映されません。コマンド、サブアプリケーション、エイリアスの名前を `-` で始めることはできません。
 
 > [!Important]
 > アプリケーションは0個以上のコマンドと0個以上のサブアプリケーションを持つことができますが、**アプリケーション自体はコマンドとして実行できません**。これは、アプリケーションをサブコマンドのハブとして設計するための意図的な制約です。もしアプリケーション自体が実行能力を持ってしまうと、`myapp subcmd` のようなコマンドの `subcmd` 部分が引数であるのか、サブコマンドであるのかの区別がつかなくなってしまいます。
@@ -142,14 +148,18 @@ app.Run()
 サブコマンドはさらにサブコマンドを持つことができます。これにより、複雑なコマンド階層を構築することが可能になります。
 
 ```go
-root := suzume.NewApp("root", "Root Command")
-sub1 := suzume.NewApp("sub1", "Sub Command 1")
+root := suzume.MustNewApp("root", "Root Command")
+sub1 := suzume.MustNewApp("sub1", "Sub Command 1")
 cmd, _ := suzume.NewCommand("cmd", "A command", func() error {
     // do something
     return nil
 })
-sub1.AddCommand(cmd) // root sub1 cmd
-root.AddApp(sub1)
+if err := sub1.AddCommand(cmd); err != nil { // root sub1 cmd
+    panic(err)
+}
+if err := root.AddApp(sub1); err != nil {
+    panic(err)
+}
 root.Run() // go run main.go sub1 cmd
 ```
 

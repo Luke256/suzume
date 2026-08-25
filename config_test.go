@@ -140,7 +140,7 @@ func TestWithIgnoreSignals_ClonesInput(t *testing.T) {
 }
 
 func TestConfigInheritance_RemainsUnresolvedWithoutExplicitConfig(t *testing.T) {
-	app := NewApp("app", "App")
+	app := MustNewApp("app", "App")
 	cmd := MustNewCommand("run", "Run", func() error { return nil })
 
 	if configuration := app.resolveConfig(nil); configuration != nil {
