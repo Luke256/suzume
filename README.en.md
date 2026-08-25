@@ -60,6 +60,8 @@ Commands can be defined in two ways: with `suzume.NewCommand`, or from a struct 
 
 `suzume.NewCommand` defines a command name, description, and implementation in one call. Positional arguments are inferred from the function signature.
 
+Handlers may accept `context.Context` and positional arguments convertible from strings (strings, numbers, or types implementing `encoding.TextUnmarshaler`). Booleans and slices are not supported. A handler must return either nothing or a single `error`. `NewCommand` rejects `nil` handlers and invalid signatures when the command is created.
+
 ```go
 cmd, err := suzume.NewCommand("greet", "Greet someone", func(name string, num int) error {
     println("Hello,", name, "you have", num, "messages.")

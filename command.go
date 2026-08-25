@@ -66,7 +66,8 @@ type argSpec struct {
 }
 
 // NewCommand creates a new Executable with the given name, description, and handler function.
-// The handler function can be any function that takes zero or more arguments and returns an error.
+// The handler may accept supported positional argument types and context.Context, and must return
+// either no values or a single error.
 // Command names beginning with a hyphen are rejected.
 func NewCommand(name, description string, runFunc any) (*Executable, error) {
 	if name == "" {

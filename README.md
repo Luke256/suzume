@@ -54,6 +54,8 @@ go get github.com/Luke256/suzume
 ### `suzume.NewCommand` を使用したコマンド定義
 `suzume.NewCommand` を用いると、コマンド名と説明、そしてコマンドの実装を一度に定義できます。コマンドの引数は関数のシグネチャから自動的に推測されます。
 
+ハンドラーは、`context.Context` と文字列から変換可能な位置引数（文字列、数値、`encoding.TextUnmarshaler` 実装型）を受け取れます。`bool` とスライスは使用できません。戻り値は、なしまたは単一の `error` のみ指定できます。不正なシグネチャや `nil` は `NewCommand` の呼び出し時にエラーになります。
+
 ```go
 cmd, err := suzume.NewCommand("greet", "Greet someone", func(name string, num int) error {
     println("Hello,", name, "you have", num, "messages.")

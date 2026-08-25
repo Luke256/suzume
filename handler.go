@@ -29,9 +29,21 @@ func pascalToKebab(s string) string {
 // 固定引数の関数をコマンドのハンドラー
 // args: ["arg1", "arg2", ...]
 func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
-	v := reflect.TypeOf(runFunc)
-	if v.Kind() != reflect.Func {
+	runValue := reflect.ValueOf(runFunc)
+	if !runValue.IsValid() {
+		return nil, nil, fmt.Errorf("runFunc cannot be nil")
+	}
+	if runValue.Kind() != reflect.Func {
 		return nil, nil, fmt.Errorf("runFunc must be a function")
+	}
+	if runValue.IsNil() {
+		return nil, nil, fmt.Errorf("runFunc cannot be nil")
+	}
+
+	v := runValue.Type()
+	errorType := reflect.TypeFor[error]()
+	if v.NumOut() > 1 || v.NumOut() == 1 && v.Out(0) != errorType {
+		return nil, nil, fmt.Errorf("runFunc must return no values or a single error")
 	}
 
 	argSpecs := make([]argSpec, v.NumIn()+1)
@@ -56,6 +68,9 @@ func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
 				typeInfo: arg,
 			}
 		} else {
+			if !supportsArgumentType(arg) {
+				return nil, nil, fmt.Errorf("unsupported function handler argument type %v: argument %d", arg, i+1)
+			}
 			argSpecs[i] = argSpec{
 				index:    i,
 				name:     fmt.Sprintf("arg%d", argIndex),
@@ -86,8 +101,8 @@ func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
 			}
 		}
 
-		out := reflect.ValueOf(runFunc).Call(in)
-		if len(out) == 1 && out[0].Type() == reflect.TypeFor[error]() {
+		out := runValue.Call(in)
+		if len(out) == 1 {
 			if !out[0].IsNil() {
 				return out[0].Interface().(error)
 			}

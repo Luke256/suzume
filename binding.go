@@ -8,6 +8,24 @@ import (
 	"strings"
 )
 
+func supportsArgumentType(argType reflect.Type) bool {
+	textUnmarshalerType := reflect.TypeFor[encoding.TextUnmarshaler]()
+	if reflect.PointerTo(argType).Implements(textUnmarshalerType) || argType.Implements(textUnmarshalerType) {
+		return true
+	}
+
+	switch argType.Kind() {
+	case reflect.String,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.Float32, reflect.Float64,
+		reflect.Complex64, reflect.Complex128:
+		return true
+	default:
+		return false
+	}
+}
+
 func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
 	textUnmarshalerType := reflect.TypeFor[encoding.TextUnmarshaler]()
 	if reflect.PointerTo(argType).Implements(textUnmarshalerType) {

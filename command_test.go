@@ -153,6 +153,32 @@ func TestNewCommand_EmptyNameReturnsError(t *testing.T) {
 	}
 }
 
+func TestNewCommand_RejectsInvalidFunctionHandlers(t *testing.T) {
+	var nilHandler func()
+
+	tests := []struct {
+		name    string
+		handler any
+		want    string
+	}{
+		{name: "nil", handler: nil, want: "cannot be nil"},
+		{name: "typed nil", handler: nilHandler, want: "cannot be nil"},
+		{name: "not a function", handler: 1, want: "must be a function"},
+		{name: "unsupported argument", handler: func(struct{}) {}, want: "unsupported function handler argument type"},
+		{name: "non-error return", handler: func() int { return 0 }, want: "must return no values or a single error"},
+		{name: "multiple returns containing error", handler: func() (int, error) { return 0, nil }, want: "must return no values or a single error"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := NewCommand("invalid", "Invalid handler", test.handler)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected error containing %q, got %v", test.want, err)
+			}
+		})
+	}
+}
+
 func TestCommand_Run_HelpSkipsHandler(t *testing.T) {
 	var called int
 
