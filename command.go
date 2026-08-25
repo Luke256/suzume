@@ -157,10 +157,10 @@ func (cmd *Executable) SetConfig(configuration Config) {
 
 // RunContext executes the command with the given context and arguments.
 func (cmd *Executable) RunContext(ctx context.Context, args ...string) error {
-	return cmd.runContext(ctx, nil, args...)
+	return cmd.runContext(ctx, nil, cmd.name, args...)
 }
 
-func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *Config, args ...string) error {
+func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *Config, commandPath string, args ...string) error {
 	if ctx == nil {
 		return fmt.Errorf("Context cannot be nil")
 	}
@@ -172,10 +172,10 @@ func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *Config, 
 
 	showHelp, invalidHelpArg := inspectHelpArgs(args)
 	if invalidHelpArg != "" {
-		return cmd.handleRunError(unknownOptionError(invalidHelpArg), config)
+		return cmd.handleRunError(unknownOptionError(invalidHelpArg), config, commandPath)
 	}
 	if showHelp {
-		cmd.showHelp(config)
+		cmd.showHelp(config, commandPath)
 		return nil
 	}
 
@@ -193,16 +193,16 @@ func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *Config, 
 
 	err := cmd.handler(cmdCtx, args...)
 	if err != nil {
-		return cmd.handleRunError(err, config)
+		return cmd.handleRunError(err, config, commandPath)
 	}
 
 	return nil
 }
 
-func (cmd *Executable) handleRunError(err error, config Config) error {
+func (cmd *Executable) handleRunError(err error, config Config, commandPath string) error {
 	if errors.Is(err, ErrInvalidArgument) {
 		fmt.Fprintln(config.errorLog, err)
-		cmd.showHelp(config)
+		cmd.showHelp(config, commandPath)
 	}
 	return err
 }

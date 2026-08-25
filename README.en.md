@@ -238,6 +238,8 @@ By default, Suzume does not intercept signals, so normal process signal handling
 
 Suzume automatically generates help messages from command descriptions, arguments, and options. Users can display help with the `--help` or `-h` option. A `help` subcommand is also added automatically to applications.
 
+Command help displayed through an application shows the full command path in Usage, such as `root child run`. Options that take values are shown as `--count <value>` for scalar types and `--tag <value...>` for slice types. Boolean options are shown as flags without a value.
+
 Because it takes precedence over every other subcommand, you cannot define a subcommand named `help`.
 
 Example:

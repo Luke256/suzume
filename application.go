@@ -144,7 +144,7 @@ func (app *App) runContext(ctx context.Context, inheritedConfig *Config, args ..
 	}
 
 	if cmd, cmdArgs, err := app.findCommand(args); err == nil {
-		return cmd.runContext(ctx, configuration, cmdArgs...)
+		return cmd.runContext(ctx, configuration, app.fullPath()+" "+cmd.name, cmdArgs...)
 	}
 
 	subApp, subArgs, err := app.findSubApp(args)

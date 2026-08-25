@@ -5,7 +5,7 @@ import (
 	"reflect"
 )
 
-func (cmd *Executable) showHelp(configuration Config) {
+func (cmd *Executable) showHelp(configuration Config, commandPath string) {
 	var out = configuration.log
 	var defaultValues map[string]any
 	if cmd.defaultValues != nil {
@@ -15,7 +15,7 @@ func (cmd *Executable) showHelp(configuration Config) {
 	var argumentItems []helpItem
 	var optionItems []helpItem
 
-	fmt.Fprintf(out, "Usage: %s", cmd.name)
+	fmt.Fprintf(out, "Usage: %s", commandPath)
 	for _, arg := range cmd.argSpecs {
 		if arg.index >= 0 {
 			fmt.Fprintf(out, " <%s>", arg.name)
@@ -26,10 +26,17 @@ func (cmd *Executable) showHelp(configuration Config) {
 			continue
 		}
 
+		value := ""
+		if arg.typeInfo.Kind() == reflect.Slice {
+			value = " <value...>"
+		} else if arg.typeInfo.Kind() != reflect.Bool {
+			value = " <value>"
+		}
+
 		if arg.short != "" {
-			fmt.Fprintf(out, " [-%s|--%s]", arg.short, arg.name)
+			fmt.Fprintf(out, " [-%s|--%s%s]", arg.short, arg.name, value)
 		} else if arg.name != "" {
-			fmt.Fprintf(out, " [--%s]", arg.name)
+			fmt.Fprintf(out, " [--%s%s]", arg.name, value)
 		}
 
 		if arg.index != optionsIndex {
