@@ -43,6 +43,9 @@ type App struct {
 // NewApp creates a new App with the given name and description.
 // App names beginning with a hyphen are rejected.
 func NewApp(name, description string) (*App, error) {
+	if name == "" {
+		return nil, fmt.Errorf("App name cannot be empty")
+	}
 	if err := validateIdentifier(name); err != nil {
 		return nil, err
 	}
