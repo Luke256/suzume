@@ -39,6 +39,9 @@ func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
 
 	if argType.Implements(textUnmarshalerType) {
 		value := reflect.New(argType).Elem()
+		if argType.Kind() == reflect.Pointer {
+			value = reflect.New(argType.Elem())
+		}
 		unmarshaler := value.Interface().(encoding.TextUnmarshaler)
 		if err := unmarshaler.UnmarshalText([]byte(arg)); err != nil {
 			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %w", ErrInvalidArgument, err)

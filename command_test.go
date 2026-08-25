@@ -100,6 +100,27 @@ type valuedHelpRunner struct {
 
 type concurrentBindingText string
 
+type pointerArgumentText struct {
+	value string
+}
+
+func (v *pointerArgumentText) UnmarshalText(text []byte) error {
+	v.value = string(text)
+	return nil
+}
+
+type pointerArgumentRunner struct {
+	Command
+	Value *pointerArgumentText `cli:"value"`
+}
+
+var pointerArgumentRunnerValue *pointerArgumentText
+
+func (r *pointerArgumentRunner) Run(context.Context) error {
+	pointerArgumentRunnerValue = r.Value
+	return nil
+}
+
 var concurrentBindingStarted chan struct{}
 var concurrentBindingRelease chan struct{}
 
@@ -176,6 +197,32 @@ func TestNewCommand_RejectsInvalidFunctionHandlers(t *testing.T) {
 				t.Fatalf("expected error containing %q, got %v", test.want, err)
 			}
 		})
+	}
+}
+
+func TestCommand_Run_BindsPointerTextUnmarshaler(t *testing.T) {
+	var got *pointerArgumentText
+	cmd := MustNewCommand("pointer", "Pointer argument", func(value *pointerArgumentText) {
+		got = value
+	})
+
+	if err := cmd.Run("hello"); err != nil {
+		t.Fatalf("failed to run command: %v", err)
+	}
+	if got == nil || got.value != "hello" {
+		t.Fatalf("expected allocated value hello, got %#v", got)
+	}
+}
+
+func TestUseCommand_Run_BindsPointerTextUnmarshaler(t *testing.T) {
+	pointerArgumentRunnerValue = nil
+	cmd := MustUseCommand[*pointerArgumentRunner]("pointer", "Pointer option")
+
+	if err := cmd.Run("--value", "hello"); err != nil {
+		t.Fatalf("failed to run command: %v", err)
+	}
+	if got := pointerArgumentRunnerValue; got == nil || got.value != "hello" {
+		t.Fatalf("expected allocated value hello, got %#v", got)
 	}
 }
 

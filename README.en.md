@@ -39,7 +39,7 @@ The following features make CLI application development in Go simpler and more e
 
 - **Scalability**: Start with a lightweight command and add subcommands or other features as needed.
 - **Simple command definitions**: Infer command arguments and options from function signatures or struct tags.
-- **Custom type support**: Use custom argument and option types that implement `encoding.TextUnmarshaler`.
+- **Custom type support**: Use value or pointer argument and option types that implement `encoding.TextUnmarshaler`. Pointer types receive a newly allocated value during conversion.
 - **Explicit defaults**: Define default option values in code.
 - **Automatic help generation**: Generate help from command descriptions, arguments, and options.
 - **No third-party dependencies**: Suzume is built entirely with the Go standard library.
