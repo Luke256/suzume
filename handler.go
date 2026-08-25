@@ -15,15 +15,34 @@ const (
 	contextIndex = -2
 )
 
+// pascalToKebab converts a PascalCase string to kebab-case.
+// For example, "HelloWorld" becomes "hello-world".
+// APIKey -> api-key
 func pascalToKebab(s string) string {
-	var result []string
-	for i, r := range s {
+	runes := []rune(s)
+	var sb strings.Builder
+
+	for i, r := range runes {
 		if i > 0 && unicode.IsUpper(r) {
-			result = append(result, "-")
+			prev := runes[i-1]
+
+			var next rune
+			hasNext := i+1 < len(runes)
+			if hasNext {
+				next = runes[i+1]
+			}
+
+			if unicode.IsLower(prev) ||
+			   unicode.IsDigit(prev) ||
+				(unicode.IsUpper(prev) && hasNext && unicode.IsLower(next)) {
+				sb.WriteRune('-')
+			}
 		}
-		result = append(result, string(unicode.ToLower(r)))
+
+		sb.WriteRune(unicode.ToLower(r))
 	}
-	return strings.Join(result, "")
+
+	return sb.String()
 }
 
 // 固定引数の関数をコマンドのハンドラー
