@@ -165,52 +165,56 @@ root.Run() // go run main.go sub1 cmd
 
 ## Config
 
-Use `suzume.Config` for settings such as log output destinations and signal handling.
-Apply a configuration to a command or application with the `SetConfig` method.
+Settings such as log destinations and signal handling can be configured for each command. Create a configuration with `suzume.DefaultConfig()` or `suzume.NewConfig(options ...ConfigOption)`, then pass it to a command or application's `SetConfig` method.
 
-Unless explicitly configured with `SetConfig`, commands and applications inherit their parent's configuration.
+Use the following configuration API:
+
+- `suzume.DefaultConfig()` creates the default configuration.
+- `suzume.NewConfig(options ...ConfigOption)` starts from the defaults and applies the supplied options.
+- `suzume.WithLog(writer)` sets the normal log destination.
+- `suzume.WithErrorLog(writer)` sets the error log destination.
+- `suzume.WithIgnoreSignals(signals...)` selects signals to intercept during execution.
+
+### Defaults and inheritance
+
+`DefaultConfig()` and `NewConfig()` without options both use these defaults:
+
+- Normal log: `os.Stdout`
+- Error log: `os.Stderr`
+- Intercepted signals: none
+
+Commands and applications without explicit configuration inherit their parent's configuration at runtime. Calling `SetConfig` makes that command or application use the supplied configuration instead of inheriting its parent. The defaults are used when there is no parent.
+
+To set the defaults explicitly:
+
+```go
+app.SetConfig(suzume.DefaultConfig())
+```
 
 ### Log configuration
 
-Set the log output destination with the `Log` field of `suzume.Config`, and the error log destination with `ErrorLog`:
+Use `WithLog` and `WithErrorLog` to change the output destinations. Passing `nil` keeps the corresponding default destination. To intentionally suppress output, pass `io.Discard` rather than `nil`.
 
 ```go
-cmd.SetConfig(suzume.Config{
-    Log:      os.Stdout,
-    ErrorLog: os.Stderr,
-})
+cmd.SetConfig(suzume.NewConfig(
+    suzume.WithLog(logWriter),
+    suzume.WithErrorLog(io.Discard), // Suppress error logs
+))
 ```
 
-By default, normal output is written to standard output and errors are written to standard error.
+For example, `suzume.WithLog(nil)` keeps `os.Stdout`, while `suzume.WithErrorLog(nil)` keeps `os.Stderr`.
 
 ### Signal handling
 
-Signals listed in the `IgnoreSignals` field of `suzume.Config` are intercepted while the command is running. Receiving one cancels the command's context instead of immediately terminating the process, allowing the command to perform shutdown processing.
+Signals passed to `WithIgnoreSignals` are intercepted while the command is running. Receiving one cancels the command's context instead of immediately terminating the process, allowing shutdown work through `ctx.Done()`.
 
 ```go
-cmd.SetConfig(suzume.Config{
-    Log:           os.Stdout,
-    ErrorLog:      os.Stderr,
-    IgnoreSignals: []os.Signal{syscall.SIGINT, syscall.SIGTERM},
-})
+cmd.SetConfig(suzume.NewConfig(
+    suzume.WithIgnoreSignals(os.Interrupt, syscall.SIGTERM),
+))
 ```
 
-With this configuration, when a user attempts to terminate the process with `Ctrl+C` or a similar action, the command does not exit immediately and can wait for the signal through `ctx.Done()`.
-
-```go
-// Example command processing
-func commandFunc(ctx context.Context) error {
-    for {
-        select {
-        case <-ctx.Done():
-            // Clean up after receiving a signal
-            return nil
-        default:
-        }
-        // Normal processing
-    }
-}
-```
+By default, Suzume does not intercept signals, so normal process signal handling remains in effect.
 
 ## Automatic help generation
 

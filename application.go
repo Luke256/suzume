@@ -33,16 +33,15 @@ type App struct {
 	// apps is the list of sub-applications directly under this application.
 	apps []*App
 
-	// config holds the configuration for the application, such as log output destinations.
-	config Config
+	// config holds an explicitly assigned configuration. A nil value inherits from the parent.
+	config *config
 }
 
-// NewApp creates a new App with the given name and description, and initializes it with the default configuration.
+// NewApp creates a new App with the given name and description.
 func NewApp(name, description string) *App {
 	return &App{
 		name:        name,
 		description: description,
-		config:      defaultConfig(),
 	}
 }
 
@@ -71,41 +70,48 @@ func (app *App) Alias(name string) *App {
 }
 
 // SetConfig sets the configuration for the application. This configuration will be inherited by sub-applications and commands unless they have their own configuration set.
-func (app *App) SetConfig(config Config) {
-	app.config = config
+func (app *App) SetConfig(configuration config) {
+	app.config = &configuration
 }
 
 // RunContext executes the application with the given context and arguments.
 // It first checks if the arguments indicate that the help message should be shown, then it tries to find a matching command or sub-application to execute.
 // If no matching command or sub-application is found, it returns an error.
 func (app *App) RunContext(ctx context.Context, args ...string) error {
+	return app.runContext(ctx, nil, args...)
+}
+
+func (app *App) runContext(ctx context.Context, inheritedConfig *config, args ...string) error {
+	configuration := app.resolveConfig(inheritedConfig)
 	args = app.resolveArgs(args)
 
 	if shouldShowAppHelp(args) {
-		app.showHelp()
+		app.showHelp(materializeConfig(configuration))
 		return nil
 	}
 
 	if cmd, cmdArgs, err := app.findCommand(args); err == nil {
-		if cmd.config.inherit {
-			cmd.config = app.config
-		}
-		return cmd.RunContext(ctx, cmdArgs...)
+		return cmd.runContext(ctx, configuration, cmdArgs...)
 	}
 
 	subApp, subArgs, err := app.findSubApp(args)
 	if err != nil {
 		if errors.Is(err, ErrCommandNotFound) {
-			fmt.Fprintf(app.config.ErrorLog, "Error: %s\n", err.Error())
-			app.showHelp()
+			resolvedConfig := materializeConfig(configuration)
+			fmt.Fprintf(resolvedConfig.errorLog, "Error: %s\n", err.Error())
+			app.showHelp(resolvedConfig)
 		}
 		return err
 	}
 
-	if subApp.config.inherit {
-		subApp.config = app.config
+	return subApp.runContext(ctx, configuration, subArgs...)
+}
+
+func (app *App) resolveConfig(inheritedConfig *config) *config {
+	if app.config != nil {
+		return app.config
 	}
-	return subApp.RunContext(ctx, subArgs...)
+	return inheritedConfig
 }
 
 // RunContextAndExit executes the application with the given context and arguments and exits the process with code 1 if an error occurs.
@@ -140,8 +146,8 @@ func shouldShowAppHelp(args []string) bool {
 	return args[0] == "help" || args[0] == "--help" || args[0] == "-h"
 }
 
-func (app *App) showHelp() {
-	out := app.config.Log
+func (app *App) showHelp(configuration config) {
+	out := configuration.log
 	appPath := app.fullPath()
 	fmt.Fprintf(out, "%s\n\n", appPath)
 	if app.description != "" {

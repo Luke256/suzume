@@ -61,7 +61,7 @@ func TestApp_Run_ShowsHelpOnNoArgs(t *testing.T) {
 	var errOut bytes.Buffer
 
 	app := NewApp("mycli", "A test CLI")
-	app.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	app.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	if err := app.Run([]string{}...); err != nil {
 		t.Fatalf("expected no error when no args are provided: %v", err)
@@ -84,7 +84,7 @@ func TestApp_Run_UnknownCommandWritesErrorAndHelp(t *testing.T) {
 	var errOut bytes.Buffer
 
 	app := NewApp("mycli", "A test CLI")
-	app.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	app.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	err := app.Run("missing")
 	if !errors.Is(err, ErrCommandNotFound) {
@@ -106,7 +106,7 @@ func TestApp_Run_SubAppHelpShowsScopedPath(t *testing.T) {
 	root := NewApp("root", "Root app")
 	child := NewApp("child", "Child app")
 	root.AddApp(child)
-	root.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	root.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	if err := root.Run("child"); err != nil {
 		t.Fatalf("expected no error when showing sub app help: %v", err)
@@ -126,7 +126,7 @@ func TestApp_Run_InheritsConfigToCommand(t *testing.T) {
 	var errOut bytes.Buffer
 
 	app := NewApp("root", "Root app")
-	app.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	app.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	cmd, err := NewCommand("echo", "Echo command", func(name string) error {
 		return nil
@@ -145,6 +145,135 @@ func TestApp_Run_InheritsConfigToCommand(t *testing.T) {
 	}
 	if errOut.Len() != 0 {
 		t.Fatalf("expected no stderr output, got: %q", errOut.String())
+	}
+}
+
+func TestApp_Run_InheritsErrorConfigToCommand(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	app := NewApp("root", "Root app")
+	app.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
+	app.AddCommand(MustNewCommand("count", "Count command", func(int) error { return nil }))
+
+	err := app.Run("count", "invalid")
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("expected ErrInvalidArgument, got: %v", err)
+	}
+	if !strings.Contains(errOut.String(), "invalid argument") {
+		t.Fatalf("expected inherited error log to receive the error, got: %q", errOut.String())
+	}
+	if !strings.Contains(out.String(), "Usage: count") {
+		t.Fatalf("expected inherited log to receive command help, got: %q", out.String())
+	}
+}
+
+func TestApp_Run_InheritsConfigThroughNestedApps(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	root := NewApp("root", "Root app")
+	root.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
+
+	child := NewApp("child", "Child app")
+	grandchild := NewApp("grandchild", "Grandchild app")
+	cmd := MustNewCommand("echo", "Echo command", func() error { return nil })
+
+	grandchild.AddCommand(cmd)
+	child.AddApp(grandchild)
+	root.AddApp(child)
+
+	if err := root.Run("child", "grandchild", "echo", "--help"); err != nil {
+		t.Fatalf("expected no error when showing nested command help: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "Usage: echo") {
+		t.Fatalf("expected nested command help in inherited root log, got: %q", out.String())
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("expected no stderr output, got: %q", errOut.String())
+	}
+}
+
+func TestApp_Run_ExplicitConfigOverridesInheritedConfig(t *testing.T) {
+	var rootOut bytes.Buffer
+	var childOut bytes.Buffer
+	var commandOut bytes.Buffer
+	var errOut bytes.Buffer
+
+	root := NewApp("root", "Root app")
+	root.SetConfig(NewConfig(WithLog(&rootOut), WithErrorLog(&errOut)))
+
+	child := NewApp("child", "Child app")
+	child.SetConfig(NewConfig(WithLog(&childOut), WithErrorLog(&errOut)))
+	grandchild := NewApp("grandchild", "Grandchild app")
+
+	inherited := MustNewCommand("inherited", "Inherited command", func() error { return nil })
+	overridden := MustNewCommand("overridden", "Overridden command", func() error { return nil })
+	overridden.SetConfig(NewConfig(WithLog(&commandOut), WithErrorLog(&errOut)))
+
+	grandchild.AddCommand(inherited)
+	grandchild.AddCommand(overridden)
+	child.AddApp(grandchild)
+	root.AddApp(child)
+
+	if err := root.Run("child", "grandchild", "inherited", "--help"); err != nil {
+		t.Fatalf("expected inherited command help to succeed: %v", err)
+	}
+	if err := root.Run("child", "grandchild", "overridden", "--help"); err != nil {
+		t.Fatalf("expected overridden command help to succeed: %v", err)
+	}
+
+	if rootOut.Len() != 0 {
+		t.Fatalf("expected child config to override root config, got root output: %q", rootOut.String())
+	}
+	if !strings.Contains(childOut.String(), "Usage: inherited") {
+		t.Fatalf("expected unconfigured descendants to inherit child log, got: %q", childOut.String())
+	}
+	if strings.Contains(childOut.String(), "Usage: overridden") {
+		t.Fatalf("expected command config to override child config, got child output: %q", childOut.String())
+	}
+	if !strings.Contains(commandOut.String(), "Usage: overridden") {
+		t.Fatalf("expected explicitly configured command log, got: %q", commandOut.String())
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("expected no stderr output, got: %q", errOut.String())
+	}
+}
+
+func TestApp_Run_SharedCommandUsesEachAppConfig(t *testing.T) {
+	var firstOut bytes.Buffer
+	var firstErrOut bytes.Buffer
+	var secondOut bytes.Buffer
+	var secondErrOut bytes.Buffer
+
+	first := NewApp("first", "First app")
+	first.SetConfig(NewConfig(WithLog(&firstOut), WithErrorLog(&firstErrOut)))
+	second := NewApp("second", "Second app")
+	second.SetConfig(NewConfig(WithLog(&secondOut), WithErrorLog(&secondErrOut)))
+
+	shared := MustNewCommand("shared", "Shared command", func() error { return nil })
+	first.AddCommand(shared)
+	second.AddCommand(shared)
+
+	if err := first.Run("shared", "--help"); err != nil {
+		t.Fatalf("expected first app run to succeed: %v", err)
+	}
+	if err := second.Run("shared", "--help"); err != nil {
+		t.Fatalf("expected second app run to succeed: %v", err)
+	}
+	if err := first.Run("shared", "--help"); err != nil {
+		t.Fatalf("expected repeated first app run to succeed: %v", err)
+	}
+
+	if got := strings.Count(firstOut.String(), "Usage: shared"); got != 2 {
+		t.Fatalf("expected first app log to receive two runs, got %d: %q", got, firstOut.String())
+	}
+	if got := strings.Count(secondOut.String(), "Usage: shared"); got != 1 {
+		t.Fatalf("expected second app log to receive one run, got %d: %q", got, secondOut.String())
+	}
+	if firstErrOut.Len() != 0 || secondErrOut.Len() != 0 {
+		t.Fatalf("expected no stderr output, got first %q and second %q", firstErrOut.String(), secondErrOut.String())
 	}
 }
 

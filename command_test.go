@@ -122,7 +122,7 @@ func TestCommand_Run_HelpSkipsHandler(t *testing.T) {
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	cmd.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	cmd.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	if err := cmd.Run("--help"); err != nil {
 		t.Fatalf("expected no error: %v", err)
@@ -153,7 +153,7 @@ func TestUseCommand_HelpShowsOptionDefaultValues(t *testing.T) {
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	cmd.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	cmd.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	if err := cmd.Run("--help"); err != nil {
 		t.Fatalf("expected no error: %v", err)
@@ -201,7 +201,7 @@ func TestUseCommand_HelpAlignsDescriptions(t *testing.T) {
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	cmd.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	cmd.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	if err := cmd.Run("--help"); err != nil {
 		t.Fatalf("expected no error: %v", err)
@@ -248,7 +248,7 @@ func TestUseCommand_InvalidArgumentCallsDefaultOnce(t *testing.T) {
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	cmd.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	cmd.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	err = cmd.Run("--count", "invalid")
 	if !errors.Is(err, ErrInvalidArgument) {
@@ -275,7 +275,7 @@ func TestCommand_Run_InvalidArgumentShowsHelpAndError(t *testing.T) {
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	cmd.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	cmd.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	err = cmd.Run("oops")
 	if !errors.Is(err, ErrInvalidArgument) {
@@ -566,11 +566,11 @@ func TestCommand_RunContext_SignalHandling(t *testing.T) {
 		}
 
 		var out bytes.Buffer
-		cmd.SetConfig(Config{
-			IgnoreSignals: []os.Signal{os.Interrupt},
-			Log:           &out,
-			ErrorLog:      &out,
-		})
+		cmd.SetConfig(NewConfig(
+			WithIgnoreSignals(os.Interrupt),
+			WithLog(&out),
+			WithErrorLog(&out),
+		))
 
 		ready := make(chan struct{})
 

@@ -154,49 +154,57 @@ root.Run() // go run main.go sub1 cmd
 ```
 
 ## Config
-ログの出力先やシグナルのハンドリング等の設定は、`suzume.Config`を用いて行います。
-コマンド・アプリケーションへの設定は `SetConfig` メソッドを使用して行います。
 
-`SetConfig` で明示的に設定されない限り、コマンドやアプリケーションは親の設定を継承します。
+ログの出力先やシグナルのハンドリング等の設定は、コマンドごとに設定を行うことができます。`suzume.DefaultConfig()` または `suzume.NewConfig(options ...ConfigOption)` で作成し、コマンドやアプリケーションの `SetConfig` メソッドに渡します。
+
+設定には次の API を使用します。
+
+- `suzume.DefaultConfig()`：既定の設定を作成します。
+- `suzume.NewConfig(options ...ConfigOption)`：既定値から開始し、指定されたオプションを適用します。
+- `suzume.WithLog(writer)`：通常ログの出力先を設定します。
+- `suzume.WithErrorLog(writer)`：エラーログの出力先を設定します。
+- `suzume.WithIgnoreSignals(signals...)`：実行中に捕捉するシグナルを設定します。
+
+### 既定値と継承
+
+`DefaultConfig()` とオプションを指定しない `NewConfig()` は、どちらも次の既定値を使用します。
+
+- 通常ログ：`os.Stdout`
+- エラーログ：`os.Stderr`
+- 捕捉するシグナル：なし
+
+明示的に設定を行っていないコマンドやアプリケーションは、実行時に親の設定を継承します。`SetConfig` で設定を明示すると、そのコマンドまたはアプリケーションでは親の設定を継承せず、指定された設定を使用します。親を持たない場合は既定値が使用されます。
+
+既定の設定を明示する場合は、次のように指定できます。
+
+```go
+app.SetConfig(suzume.DefaultConfig())
+```
 
 ### ログの設定
-ログの出力先は `suzume.Config` の `Log` フィールドで指定できます。エラーログの出力先は `ErrorLog` フィールドで指定します。
+
+`WithLog` と `WithErrorLog` で出力先を変更できます。`nil` を渡した場合は対応する既定の出力先が維持されます。出力を意図的に抑止する場合は、`nil` ではなく `io.Discard` を指定してください。
 
 ```go
-cmd.SetConfig(suzume.Config{
-    Log:        os.Stdout,
-    ErrorLog:   os.Stderr,
-})
+cmd.SetConfig(suzume.NewConfig(
+    suzume.WithLog(logWriter),
+    suzume.WithErrorLog(io.Discard), // エラーログを抑止
+))
 ```
-デフォルトでは、ログは標準出力に、エラーログは標準エラー出力に出力されます。
+
+例えば `suzume.WithLog(nil)` は `os.Stdout` を維持し、`suzume.WithErrorLog(nil)` は `os.Stderr` を維持します。
 
 ### シグナルのハンドリング
-`suzume.Config` の `IgnoreSignals` フィールドで指定されたシグナルは、コマンドの実行中に捕捉されます。シグナルを受け取ると、プロセスを直ちに終了する代わりにコマンドのコンテキストがキャンセルされるため、終了処理を実行できます。
+
+`WithIgnoreSignals` に指定したシグナルは、コマンドの実行中に捕捉されます。シグナルを受け取ると、プロセスを直ちに終了する代わりにコマンドのコンテキストがキャンセルされるため、`ctx.Done()` を通じて終了処理を実行できます。
 
 ```go
-cmd.SetConfig(suzume.Config{
-    Log:           os.Stdout,
-    ErrorLog:      os.Stderr,
-    IgnoreSignals: []os.Signal{syscall.SIGINT, syscall.SIGTERM},
-})
+cmd.SetConfig(suzume.NewConfig(
+    suzume.WithIgnoreSignals(os.Interrupt, syscall.SIGTERM),
+))
 ```
 
-このようにすると、ユーザーが `Ctrl+C` などでプロセスを終了しようとした場合、コマンドは直ちには終了せず、`ctx.Done()` でのシグナルの受信を待つことができます。
-
-```go
-// コマンドの処理の例
-func commandFunc(ctx context.Context) error {
-    for {
-        select {
-        case <-ctx.Done():
-            // シグナルを受け取ったときのクリーンアップ処理
-            return nil
-        default:
-        }
-        // 通常の処理
-    }
-}
-```
+既定では Suzume はシグナルを捕捉せず、通常のプロセスのシグナル処理が維持されます。
 
 ## ヘルプの自動生成
 Suzume はコマンドの説明や引数、オプションの情報から自動的にヘルプメッセージを生成します。ユーザーは `--help` `-h` オプションを使用してヘルプを表示できます。また、アプリケーションに対しては `help` サブコマンドも自動的に追加されます。

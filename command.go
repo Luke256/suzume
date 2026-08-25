@@ -51,7 +51,7 @@ type Executable struct {
 	handler       commandHandler
 	argSpecs      []argSpec
 	defaultValues defaultValuesProvider
-	config        Config
+	config        *config
 }
 
 type argSpec struct {
@@ -83,7 +83,6 @@ func NewCommand(name, description string, runFunc any) (*Executable, error) {
 		description: description,
 		handler:     handler,
 		argSpecs:    argSpecs,
-		config:      defaultConfig(),
 	}, nil
 }
 
@@ -115,7 +114,6 @@ func UseCommand[T CommandDefinition](name, description string) (*Executable, err
 		handler:       handler,
 		argSpecs:      argSpecs,
 		defaultValues: defaultValues,
-		config:        defaultConfig(),
 	}, nil
 }
 
@@ -140,29 +138,34 @@ func (cmd *Executable) Alias(name string) *Executable {
 
 // SetConfig sets the configuration for the command.
 // This configuration will be used when the command is executed, and it can override the configuration inherited from the parent application.
-func (cmd *Executable) SetConfig(config Config) {
-	cmd.config = config
+func (cmd *Executable) SetConfig(configuration config) {
+	cmd.config = &configuration
 }
 
 // RunContext executes the command with the given context and arguments.
 func (cmd *Executable) RunContext(ctx context.Context, args ...string) error {
+	return cmd.runContext(ctx, nil, args...)
+}
+
+func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *config, args ...string) error {
 	if ctx == nil {
 		return fmt.Errorf("Context cannot be nil")
 	}
 
+	config := materializeConfig(cmd.resolveConfig(inheritedConfig))
 	if args == nil {
 		args = os.Args[1:]
 	}
 
 	if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
-		cmd.showHelp()
+		cmd.showHelp(config)
 		return nil
 	}
 
 	var cmdCtx context.Context
 
-	if len(cmd.config.IgnoreSignals) > 0 {
-		c, stop := signal.NotifyContext(ctx, cmd.config.IgnoreSignals...)
+	if len(config.ignoreSignals) > 0 {
+		c, stop := signal.NotifyContext(ctx, config.ignoreSignals...)
 		defer stop()
 		cmdCtx = c
 	} else {
@@ -175,13 +178,20 @@ func (cmd *Executable) RunContext(ctx context.Context, args ...string) error {
 
 	if err != nil {
 		if errors.Is(err, ErrInvalidArgument) {
-			fmt.Fprintln(cmd.config.ErrorLog, err)
-			cmd.showHelp()
+			fmt.Fprintln(config.errorLog, err)
+			cmd.showHelp(config)
 		}
 		return err
 	}
 
 	return nil
+}
+
+func (cmd *Executable) resolveConfig(inheritedConfig *config) *config {
+	if cmd.config != nil {
+		return cmd.config
+	}
+	return inheritedConfig
 }
 
 // RunContextAndExit executes the command with the given context and arguments and exits the program with a non-zero status code if an error occurs.

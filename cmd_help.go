@@ -5,8 +5,8 @@ import (
 	"reflect"
 )
 
-func (cmd *Executable) showHelp() {
-	var out = cmd.config.Log
+func (cmd *Executable) showHelp(configuration config) {
+	var out = configuration.log
 	var defaultValues map[string]any
 	if cmd.defaultValues != nil {
 		defaultValues = cmd.defaultValues()
