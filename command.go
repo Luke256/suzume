@@ -62,7 +62,6 @@ type argSpec struct {
 	fieldName      string
 	defaultText    string
 	hasDefaultText bool
-	value          reflect.Value
 	typeInfo       reflect.Type
 }
 

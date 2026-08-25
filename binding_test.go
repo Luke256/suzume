@@ -158,22 +158,22 @@ func TestBindArgsToValues_BindsPositionalAndOptions(t *testing.T) {
 	}
 	sortArgSpecs(specs)
 
-	err := bindArgsToValues([]string{"alice", "--count=3", "-v", "--task", "build", "test"}, specs)
+	values, err := bindArgsToValues([]string{"alice", "--count=3", "-v", "--task", "build", "test"}, specs)
 	if err != nil {
 		t.Fatalf("bind failed: %v", err)
 	}
 
-	if got := findSpecByName(specs, "name").value.String(); got != "alice" {
+	if got := findValueByName(specs, values, "name").String(); got != "alice" {
 		t.Fatalf("expected positional name alice, got %q", got)
 	}
-	if got := findSpecByName(specs, "count").value.Int(); got != 3 {
+	if got := findValueByName(specs, values, "count").Int(); got != 3 {
 		t.Fatalf("expected count 3, got %d", got)
 	}
-	if !findSpecByName(specs, "verbose").value.Bool() {
+	if !findValueByName(specs, values, "verbose").Bool() {
 		t.Fatalf("expected verbose true")
 	}
 
-	tasks := findSpecByName(specs, "task").value.Interface().([]string)
+	tasks := findValueByName(specs, values, "task").Interface().([]string)
 	if !reflect.DeepEqual(tasks, []string{"build", "test"}) {
 		t.Fatalf("unexpected task values: %#v", tasks)
 	}
@@ -184,15 +184,15 @@ func TestBindArgsToValues_BoolExplicitFalse(t *testing.T) {
 
 	specs := []argSpec{{index: -1, name: "verbose", short: "v", typeInfo: reflect.TypeFor[bool]()}}
 
-	err := bindArgsToValues([]string{"--verbose=false"}, specs)
+	values, err := bindArgsToValues([]string{"--verbose=false"}, specs)
 	if err != nil {
 		t.Fatalf("bind failed: %v", err)
 	}
 
-	if !specs[0].value.IsValid() {
+	if !values[0].IsValid() {
 		t.Fatalf("expected bool value to be set")
 	}
-	if specs[0].value.Bool() {
+	if values[0].Bool() {
 		t.Fatalf("expected explicit false value")
 	}
 }
@@ -202,13 +202,14 @@ func TestBindArgsToValues_NamedBoolFlag(t *testing.T) {
 
 	specs := []argSpec{{index: -1, name: "enabled", typeInfo: reflect.TypeFor[namedBool]()}}
 
-	if err := bindArgsToValues([]string{"--enabled"}, specs); err != nil {
+	values, err := bindArgsToValues([]string{"--enabled"}, specs)
+	if err != nil {
 		t.Fatalf("bind failed: %v", err)
 	}
-	if specs[0].value.Type() != reflect.TypeFor[namedBool]() {
-		t.Fatalf("expected namedBool type, got %v", specs[0].value.Type())
+	if values[0].Type() != reflect.TypeFor[namedBool]() {
+		t.Fatalf("expected namedBool type, got %v", values[0].Type())
 	}
-	if !specs[0].value.Bool() {
+	if !values[0].Bool() {
 		t.Fatal("expected enabled flag to be true")
 	}
 }
@@ -218,7 +219,7 @@ func TestBindArgsToValues_MissingOptionValue(t *testing.T) {
 
 	specs := []argSpec{{index: -1, name: "count", short: "c", typeInfo: reflect.TypeFor[int]()}}
 
-	err := bindArgsToValues([]string{"--count"}, specs)
+	_, err := bindArgsToValues([]string{"--count"}, specs)
 	if !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("expected ErrInvalidArgument, got: %v", err)
 	}
@@ -236,22 +237,34 @@ func TestBindArgsToValues_ResetsPreviousValues(t *testing.T) {
 	}
 	sortArgSpecs(specs)
 
-	err := bindArgsToValues([]string{"alice", "--count", "9"}, specs)
+	firstValues, err := bindArgsToValues([]string{"alice", "--count", "9"}, specs)
 	if err != nil {
 		t.Fatalf("first bind failed: %v", err)
 	}
 
-	err = bindArgsToValues([]string{"bob"}, specs)
+	secondValues, err := bindArgsToValues([]string{"bob"}, specs)
 	if err != nil {
 		t.Fatalf("second bind failed: %v", err)
 	}
 
-	if got := findSpecByName(specs, "name").value.String(); got != "bob" {
+	if got := findValueByName(specs, secondValues, "name").String(); got != "bob" {
 		t.Fatalf("expected second positional value bob, got %q", got)
 	}
-	if findSpecByName(specs, "count").value.IsValid() {
+	if findValueByName(specs, secondValues, "count").IsValid() {
 		t.Fatalf("expected optional count to be reset between runs")
 	}
+	if got := findValueByName(specs, firstValues, "count").Int(); got != 9 {
+		t.Fatalf("expected first bind to remain isolated, got %d", got)
+	}
+}
+
+func findValueByName(specs []argSpec, values []reflect.Value, name string) reflect.Value {
+	for i := range specs {
+		if specs[i].name == name {
+			return values[i]
+		}
+	}
+	return reflect.Value{}
 }
 
 func findSpecByName(specs []argSpec, name string) *argSpec {

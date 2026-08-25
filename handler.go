@@ -68,7 +68,8 @@ func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
 	sortArgSpecs(argSpecs)
 
 	return argSpecs, func(ctx context.Context, args ...string) error {
-		if err := bindArgsToValues(args, argSpecs); err != nil {
+		values, err := bindArgsToValues(args, argSpecs)
+		if err != nil {
 			return err
 		}
 
@@ -79,9 +80,9 @@ func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
 			}
 		}
 
-		for _, aspec := range argSpecs {
+		for i, aspec := range argSpecs {
 			if aspec.index >= 0 {
-				in[aspec.index] = aspec.value
+				in[aspec.index] = values[i]
 			}
 		}
 
@@ -186,14 +187,15 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, def
 	}
 
 	return argSpecs, func(ctx context.Context, args ...string) error {
-		if err := bindArgsToValues(args, argSpecs); err != nil {
+		values, err := bindArgsToValues(args, argSpecs)
+		if err != nil {
 			return err
 		}
 
 		runner, runnerValue := newRunner()
-		for _, aspec := range argSpecs {
-			if aspec.value.IsValid() {
-				runnerValue.FieldByName(aspec.fieldName).Set(aspec.value)
+		for i, aspec := range argSpecs {
+			if values[i].IsValid() {
+				runnerValue.FieldByName(aspec.fieldName).Set(values[i])
 			}
 		}
 

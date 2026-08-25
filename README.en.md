@@ -69,6 +69,8 @@ cmd, err := suzume.NewCommand("greet", "Greet someone", func(name string, num in
 
 Call `cmd.Run()` to execute the command. You can also pass arguments directly, as in `cmd.Run("Luke", "5")`.
 
+You may call `Run` or `RunContext` repeatedly or concurrently on the same command; arguments are bound independently for each execution. Concurrent runs also invoke the handler concurrently, so callers must synchronize any state shared by the handler or configured output writers.
+
 Use `cmd.RunAndExit()` when the process should exit with status code 1 if the command returns an error.
 
 ### Defining a command with `suzume.UseCommand`

@@ -98,6 +98,38 @@ type valuedHelpRunner struct {
 	Value string `cli:"0"`
 }
 
+type concurrentBindingText string
+
+var concurrentBindingStarted chan struct{}
+var concurrentBindingRelease chan struct{}
+
+func (v *concurrentBindingText) UnmarshalText(text []byte) error {
+	if string(text) == "wait" {
+		concurrentBindingStarted <- struct{}{}
+		<-concurrentBindingRelease
+	}
+	*v = concurrentBindingText(text)
+	return nil
+}
+
+type concurrentBindingResult struct {
+	first  string
+	second string
+}
+
+type concurrentBindingRunner struct {
+	Command
+	First  concurrentBindingText `cli:"0"`
+	Second concurrentBindingText `cli:"1"`
+}
+
+var concurrentBindingResults chan concurrentBindingResult
+
+func (r *concurrentBindingRunner) Run(context.Context) error {
+	concurrentBindingResults <- concurrentBindingResult{string(r.First), string(r.Second)}
+	return nil
+}
+
 var valuedHelpRunnerCalls int
 
 func (*valuedHelpRunner) Run(context.Context) error {
@@ -479,6 +511,74 @@ func TestUseCommand_BindsValuesAndResetsBetweenRuns(t *testing.T) {
 	}
 	if len(lastCaptureRunner.Tasks) != 0 {
 		t.Fatalf("expected Tasks to be empty on second run, got %#v", lastCaptureRunner.Tasks)
+	}
+}
+
+func TestCommand_Run_ConcurrentArgumentBinding(t *testing.T) {
+	results := make(chan concurrentBindingResult, 2)
+	cmd := MustNewCommand("concurrent", "Concurrent command", func(first, second concurrentBindingText) {
+		results <- concurrentBindingResult{string(first), string(second)}
+	})
+
+	assertConcurrentArgumentBinding(t, cmd.Run, results)
+}
+
+func TestUseCommand_Run_ConcurrentArgumentBinding(t *testing.T) {
+	results := make(chan concurrentBindingResult, 2)
+	concurrentBindingResults = results
+	cmd := MustUseCommand[*concurrentBindingRunner]("concurrent", "Concurrent command")
+
+	assertConcurrentArgumentBinding(t, cmd.Run, results)
+}
+
+func assertConcurrentArgumentBinding(t *testing.T, run func(...string) error, results <-chan concurrentBindingResult) {
+	t.Helper()
+
+	concurrentBindingStarted = make(chan struct{})
+	concurrentBindingRelease = make(chan struct{})
+
+	firstRun := make(chan error, 1)
+	go func() {
+		firstRun <- run("first", "wait")
+	}()
+
+	select {
+	case <-concurrentBindingStarted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("first run did not reach the binding barrier")
+	}
+
+	if err := run("second", "ready"); err != nil {
+		t.Fatalf("second run failed: %v", err)
+	}
+	close(concurrentBindingRelease)
+
+	select {
+	case err := <-firstRun:
+		if err != nil {
+			t.Fatalf("first run failed: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("first run did not finish")
+	}
+
+	want := map[concurrentBindingResult]bool{
+		{first: "first", second: "wait"}:   true,
+		{first: "second", second: "ready"}: true,
+	}
+	for range 2 {
+		select {
+		case got := <-results:
+			if !want[got] {
+				t.Fatalf("arguments leaked between concurrent runs: %#v", got)
+			}
+			delete(want, got)
+		case <-time.After(10 * time.Second):
+			t.Fatal("handler did not return a result")
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing concurrent run results: %#v", want)
 	}
 }
 
