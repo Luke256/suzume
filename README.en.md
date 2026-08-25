@@ -39,7 +39,7 @@ The following features make CLI application development in Go simpler and more e
 
 - **Scalability**: Start with a lightweight command and add subcommands or other features as needed.
 - **Simple command definitions**: Infer command arguments and options from function signatures or struct tags.
-- **Custom type support**: Use custom argument and option types that implement `encoding.TextUnmarshaler`.
+- **Custom type support**: Use value or pointer argument and option types that implement `encoding.TextUnmarshaler`. Pointer types receive a newly allocated value during conversion.
 - **Explicit defaults**: Define default option values in code.
 - **Automatic help generation**: Generate help from command descriptions, arguments, and options.
 - **No third-party dependencies**: Suzume is built entirely with the Go standard library.
@@ -60,6 +60,8 @@ Commands can be defined in two ways: with `suzume.NewCommand`, or from a struct 
 
 `suzume.NewCommand` defines a command name, description, and implementation in one call. Positional arguments are inferred from the function signature.
 
+Handlers may accept `context.Context` and positional arguments convertible from strings (strings, numbers, or types implementing `encoding.TextUnmarshaler`). Booleans and slices are not supported. A handler must return either nothing or a single `error`. `NewCommand` rejects `nil` handlers and invalid signatures when the command is created.
+
 ```go
 cmd, err := suzume.NewCommand("greet", "Greet someone", func(name string, num int) error {
     println("Hello,", name, "you have", num, "messages.")
@@ -68,6 +70,8 @@ cmd, err := suzume.NewCommand("greet", "Greet someone", func(name string, num in
 ```
 
 Call `cmd.Run()` to execute the command. You can also pass arguments directly, as in `cmd.Run("Luke", "5")`.
+
+You may call `Run` or `RunContext` repeatedly or concurrently on the same command; arguments are bound independently for each execution. Concurrent runs also invoke the handler concurrently, so callers must synchronize any state shared by the handler or configured output writers.
 
 Use `cmd.RunAndExit()` when the process should exit with status code 1 if the command returns an error.
 
@@ -94,10 +98,12 @@ func (c *GreetCommand) Run(ctx context.Context) error {
 
 Suzume recognizes the following struct tags:
 
-- `cli:"0"`: Defines a positional argument. The integer is its zero-based position, so `0` means the first argument. A non-integer value defines the long option name.
-- `short:"n"`: Defines a short option name. In this example, `Num` can be set with `-n`.
+- `cli:"0"`: Defines a positional argument's order with a non-negative integer. Arguments are processed from the smallest value, while a non-integer value defines the option name without the leading `--`. Option names cannot contain `=`.
+- `short:"n"`: Defines a short name without the leading `-`. In this example, `Num` can be set with `-n`.
 - `usage:"..."`: Describes the argument or option in generated help.
 - `default:"..."`: Overrides the default-value text shown in help without changing the runtime value. Use an empty string to hide the default value.
+
+Positional arguments are processed in ascending order of their non-negative integer indexes. Fields may use strings, booleans, numbers, or types implementing `encoding.TextUnmarshaler`. Slices are supported only for options, and their element type must also be supported. Option names and short names must not be duplicated, including across the two forms. The built-in help identifiers `help` and `h` are reserved. `UseCommand` rejects unsupported field types and invalid tags when the command is created.
 
 Then create the command with `suzume.UseCommand`:
 
@@ -121,11 +127,13 @@ func (r *GreetCommand) Default() {
 > [!NOTE]
 > Boolean option fields behave as flags: `--flag` sets the field to `true`. Use the `--flag=false` form to set an explicit boolean value. Boolean defaults are not shown in help.
 >
+> Slice options accept multiple following values in the separated form, such as `--tag stable fast`. The valued form, such as `--tag=stable`, produces a one-element slice containing only the specified value.
+>
 > Use `default:"..."` to customize help output for custom types or to mask/hide sensitive values. For example, `default:"from environment"` displays that text instead of the runtime value, while `default:""` hides the default value.
 
 ### Defining subcommands
 
-Create an application with `suzume.NewApp`, then add commands with `AddCommand`:
+Create an application with `suzume.NewApp`, then add commands with `AddCommand`. For static application names, you can also use `suzume.MustNewApp`, which panics if creation fails:
 
 ```go
 cmd1, _ := suzume.NewCommand("foo", "bar", func() error {
@@ -138,11 +146,17 @@ cmd2, _ := suzume.NewCommand("hoge", "fuga", func() error {
     return nil
 })
 
-app := suzume.NewApp("myapp", "My CLI Application")
-app.AddCommand(cmd1) // myapp foo
-app.AddCommand(cmd2) // myapp hoge
+app := suzume.MustNewApp("myapp", "My CLI Application")
+if err := app.AddCommand(cmd1); err != nil { // myapp foo
+    panic(err)
+}
+if err := app.AddCommand(cmd2); err != nil { // myapp hoge
+    panic(err)
+}
 app.Run()
 ```
+
+`AddCommand` and `AddApp` register a copy of the command or sub-application as it exists when the method is called. Configure aliases, settings, and children before adding them. Structural changes made to the original command or sub-application afterward are not reflected in the registered application. Command, sub-application, and alias names cannot begin with `-`.
 
 > [!IMPORTANT]
 > An application may contain any number of commands and sub-applications, but **the application itself cannot be executed as a command**. This is an intentional constraint: applications are designed to act as hubs for subcommands. If an application were executable, the `subcmd` part of an invocation such as `myapp subcmd` would be ambiguous—it could be either a positional argument or a subcommand.
@@ -152,69 +166,79 @@ app.Run()
 Subcommands can contain further subcommands, allowing you to build complex command hierarchies:
 
 ```go
-root := suzume.NewApp("root", "Root Command")
-sub1 := suzume.NewApp("sub1", "Sub Command 1")
+root := suzume.MustNewApp("root", "Root Command")
+sub1 := suzume.MustNewApp("sub1", "Sub Command 1")
 cmd, _ := suzume.NewCommand("cmd", "A command", func() error {
     // do something
     return nil
 })
-sub1.AddCommand(cmd) // root sub1 cmd
-root.AddApp(sub1)
+if err := sub1.AddCommand(cmd); err != nil { // root sub1 cmd
+    panic(err)
+}
+if err := root.AddApp(sub1); err != nil {
+    panic(err)
+}
 root.Run() // go run main.go sub1 cmd
 ```
 
 ## Config
 
-Use `suzume.Config` for settings such as log output destinations and signal handling.
-Apply a configuration to a command or application with the `SetConfig` method.
+Settings such as log destinations and signal handling can be configured for each command. Create a configuration with `suzume.DefaultConfig()` or `suzume.NewConfig(options ...ConfigOption)`, then pass it to a command or application's `SetConfig` method.
 
-Unless explicitly configured with `SetConfig`, commands and applications inherit their parent's configuration.
+Use the following configuration API:
+
+- `suzume.DefaultConfig()` creates the default configuration.
+- `suzume.NewConfig(options ...ConfigOption)` starts from the defaults and applies the supplied options.
+- `suzume.WithLog(writer)` sets the normal log destination.
+- `suzume.WithErrorLog(writer)` sets the error log destination.
+- `suzume.WithIgnoreSignals(signals...)` selects signals to intercept during execution.
+
+### Defaults and inheritance
+
+`DefaultConfig()` and `NewConfig()` without options both use these defaults:
+
+- Normal log: `os.Stdout`
+- Error log: `os.Stderr`
+- Intercepted signals: none
+
+Commands and applications without explicit configuration inherit their parent's configuration at runtime. Calling `SetConfig` makes that command or application use the supplied configuration instead of inheriting its parent. The defaults are used when there is no parent.
+
+To set the defaults explicitly:
+
+```go
+app.SetConfig(suzume.DefaultConfig())
+```
 
 ### Log configuration
 
-Set the log output destination with the `Log` field of `suzume.Config`, and the error log destination with `ErrorLog`:
+Use `WithLog` and `WithErrorLog` to change the output destinations. Passing `nil` keeps the corresponding default destination. To intentionally suppress output, pass `io.Discard` rather than `nil`.
 
 ```go
-cmd.SetConfig(suzume.Config{
-    Log:      os.Stdout,
-    ErrorLog: os.Stderr,
-})
+cmd.SetConfig(suzume.NewConfig(
+    suzume.WithLog(logWriter),
+    suzume.WithErrorLog(io.Discard), // Suppress error logs
+))
 ```
 
-By default, normal output is written to standard output and errors are written to standard error.
+For example, `suzume.WithLog(nil)` keeps `os.Stdout`, while `suzume.WithErrorLog(nil)` keeps `os.Stderr`.
 
 ### Signal handling
 
-Signals listed in the `IgnoreSignals` field of `suzume.Config` are intercepted while the command is running. Receiving one cancels the command's context instead of immediately terminating the process, allowing the command to perform shutdown processing.
+Signals passed to `WithIgnoreSignals` are intercepted while the command is running. Receiving one cancels the command's context instead of immediately terminating the process, allowing shutdown work through `ctx.Done()`.
 
 ```go
-cmd.SetConfig(suzume.Config{
-    Log:           os.Stdout,
-    ErrorLog:      os.Stderr,
-    IgnoreSignals: []os.Signal{syscall.SIGINT, syscall.SIGTERM},
-})
+cmd.SetConfig(suzume.NewConfig(
+    suzume.WithIgnoreSignals(os.Interrupt, syscall.SIGTERM),
+))
 ```
 
-With this configuration, when a user attempts to terminate the process with `Ctrl+C` or a similar action, the command does not exit immediately and can wait for the signal through `ctx.Done()`.
-
-```go
-// Example command processing
-func commandFunc(ctx context.Context) error {
-    for {
-        select {
-        case <-ctx.Done():
-            // Clean up after receiving a signal
-            return nil
-        default:
-        }
-        // Normal processing
-    }
-}
-```
+By default, Suzume does not intercept signals, so normal process signal handling remains in effect.
 
 ## Automatic help generation
 
 Suzume automatically generates help messages from command descriptions, arguments, and options. Users can display help with the `--help` or `-h` option. A `help` subcommand is also added automatically to applications.
+
+Command help displayed through an application shows the full command path in Usage, such as `root child run`. Options that take values are shown as `--count <value>` for scalar types and `--tag <value...>` for slice types. Boolean options are shown as flags without a value.
 
 Because it takes precedence over every other subcommand, you cannot define a subcommand named `help`.
 

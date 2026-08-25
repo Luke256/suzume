@@ -3,6 +3,7 @@ package suzume
 import (
 	"bytes"
 	"context"
+	"encoding"
 	"errors"
 	"os"
 	"reflect"
@@ -93,6 +94,71 @@ type errorRunner struct {
 	Command
 }
 
+type valuedHelpRunner struct {
+	Command
+	Value string `cli:"0"`
+}
+
+type concurrentBindingText string
+
+type pointerArgumentText struct {
+	value string
+}
+
+func (v *pointerArgumentText) UnmarshalText(text []byte) error {
+	v.value = string(text)
+	return nil
+}
+
+type pointerArgumentRunner struct {
+	Command
+	Value *pointerArgumentText `cli:"value"`
+}
+
+var pointerArgumentRunnerValue *pointerArgumentText
+
+func (r *pointerArgumentRunner) Run(context.Context) error {
+	pointerArgumentRunnerValue = r.Value
+	return nil
+}
+
+var concurrentBindingStarted chan struct{}
+var concurrentBindingRelease chan struct{}
+
+func (v *concurrentBindingText) UnmarshalText(text []byte) error {
+	if string(text) == "wait" {
+		concurrentBindingStarted <- struct{}{}
+		<-concurrentBindingRelease
+	}
+	*v = concurrentBindingText(text)
+	return nil
+}
+
+type concurrentBindingResult struct {
+	first  string
+	second string
+}
+
+type concurrentBindingRunner struct {
+	Command
+	First  concurrentBindingText `cli:"0"`
+	Second concurrentBindingText `cli:"1"`
+}
+
+var concurrentBindingResults chan concurrentBindingResult
+
+func (r *concurrentBindingRunner) Run(context.Context) error {
+	concurrentBindingResults <- concurrentBindingResult{string(r.First), string(r.Second)}
+	return nil
+}
+
+var valuedHelpRunnerCalls int
+
+func (*valuedHelpRunner) Run(context.Context) error {
+	valuedHelpRunnerCalls++
+	return nil
+}
+
 var errRunnerFailed = errors.New("runner failed")
 
 func (*errorRunner) Run(context.Context) error {
@@ -109,6 +175,58 @@ func TestNewCommand_EmptyNameReturnsError(t *testing.T) {
 	}
 }
 
+func TestNewCommand_RejectsInvalidFunctionHandlers(t *testing.T) {
+	var nilHandler func()
+
+	tests := []struct {
+		name    string
+		handler any
+		want    string
+	}{
+		{name: "nil", handler: nil, want: "cannot be nil"},
+		{name: "typed nil", handler: nilHandler, want: "cannot be nil"},
+		{name: "not a function", handler: 1, want: "must be a function"},
+		{name: "unsupported argument", handler: func(struct{}) {}, want: "unsupported function handler argument type"},
+		{name: "non-error return", handler: func() int { return 0 }, want: "must return no values or a single error"},
+		{name: "multiple returns containing error", handler: func() (int, error) { return 0, nil }, want: "must return no values or a single error"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := NewCommand("invalid", "Invalid handler", test.handler)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected error containing %q, got %v", test.want, err)
+			}
+		})
+	}
+}
+
+func TestCommand_Run_BindsPointerTextUnmarshaler(t *testing.T) {
+	var got *pointerArgumentText
+	cmd := MustNewCommand("pointer", "Pointer argument", func(value *pointerArgumentText) {
+		got = value
+	})
+
+	if err := cmd.Run("hello"); err != nil {
+		t.Fatalf("failed to run command: %v", err)
+	}
+	if got == nil || got.value != "hello" {
+		t.Fatalf("expected allocated value hello, got %#v", got)
+	}
+}
+
+func TestUseCommand_Run_BindsPointerTextUnmarshaler(t *testing.T) {
+	pointerArgumentRunnerValue = nil
+	cmd := MustUseCommand[*pointerArgumentRunner]("pointer", "Pointer option")
+
+	if err := cmd.Run("--value", "hello"); err != nil {
+		t.Fatalf("failed to run command: %v", err)
+	}
+	if got := pointerArgumentRunnerValue; got == nil || got.value != "hello" {
+		t.Fatalf("expected allocated value hello, got %#v", got)
+	}
+}
+
 func TestCommand_Run_HelpSkipsHandler(t *testing.T) {
 	var called int
 
@@ -122,7 +240,7 @@ func TestCommand_Run_HelpSkipsHandler(t *testing.T) {
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	cmd.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	cmd.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	if err := cmd.Run("--help"); err != nil {
 		t.Fatalf("expected no error: %v", err)
@@ -136,6 +254,56 @@ func TestCommand_Run_HelpSkipsHandler(t *testing.T) {
 	}
 	if errOut.Len() != 0 {
 		t.Fatalf("expected no stderr output, got: %q", errOut.String())
+	}
+}
+
+func TestCommand_Run_RejectsValuedHelpOptions(t *testing.T) {
+	for _, arg := range []string{"--help=false", "--help=true", "--help=", "-h=false"} {
+		t.Run(arg, func(t *testing.T) {
+			var called bool
+			cmd := MustNewCommand("ping", "Ping command", func(string) error {
+				called = true
+				return nil
+			})
+
+			assertValuedHelpOptionRejected(t, cmd, arg)
+			if called {
+				t.Fatal("expected function handler not to be called")
+			}
+		})
+	}
+}
+
+func TestUseCommand_Run_RejectsValuedHelpOptions(t *testing.T) {
+	for _, arg := range []string{"--help=false", "--help=true", "--help=", "-h=false"} {
+		t.Run(arg, func(t *testing.T) {
+			valuedHelpRunnerCalls = 0
+			cmd := MustUseCommand[*valuedHelpRunner]("ping", "Ping command")
+
+			assertValuedHelpOptionRejected(t, cmd, arg)
+			if valuedHelpRunnerCalls != 0 {
+				t.Fatalf("expected command runner not to be called, got %d calls", valuedHelpRunnerCalls)
+			}
+		})
+	}
+}
+
+func assertValuedHelpOptionRejected(t *testing.T, cmd *Executable, arg string) {
+	t.Helper()
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
+
+	err := cmd.Run(arg)
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("expected ErrInvalidArgument, got: %v", err)
+	}
+	if !strings.Contains(errOut.String(), "unknown option") || !strings.Contains(errOut.String(), arg) {
+		t.Fatalf("expected unknown option error for %q, got: %q", arg, errOut.String())
+	}
+	if !strings.Contains(out.String(), "Usage: ping") {
+		t.Fatalf("expected command help after invalid option, got: %q", out.String())
 	}
 }
 
@@ -153,7 +321,7 @@ func TestUseCommand_HelpShowsOptionDefaultValues(t *testing.T) {
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	cmd.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	cmd.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	if err := cmd.Run("--help"); err != nil {
 		t.Fatalf("expected no error: %v", err)
@@ -201,7 +369,7 @@ func TestUseCommand_HelpAlignsDescriptions(t *testing.T) {
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	cmd.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	cmd.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	if err := cmd.Run("--help"); err != nil {
 		t.Fatalf("expected no error: %v", err)
@@ -248,7 +416,7 @@ func TestUseCommand_InvalidArgumentCallsDefaultOnce(t *testing.T) {
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	cmd.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	cmd.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	err = cmd.Run("--count", "invalid")
 	if !errors.Is(err, ErrInvalidArgument) {
@@ -275,7 +443,7 @@ func TestCommand_Run_InvalidArgumentShowsHelpAndError(t *testing.T) {
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	cmd.SetConfig(Config{inherit: true, Log: &out, ErrorLog: &errOut})
+	cmd.SetConfig(NewConfig(WithLog(&out), WithErrorLog(&errOut)))
 
 	err = cmd.Run("oops")
 	if !errors.Is(err, ErrInvalidArgument) {
@@ -420,6 +588,74 @@ func TestUseCommand_BindsValuesAndResetsBetweenRuns(t *testing.T) {
 	}
 }
 
+func TestCommand_Run_ConcurrentArgumentBinding(t *testing.T) {
+	results := make(chan concurrentBindingResult, 2)
+	cmd := MustNewCommand("concurrent", "Concurrent command", func(first, second concurrentBindingText) {
+		results <- concurrentBindingResult{string(first), string(second)}
+	})
+
+	assertConcurrentArgumentBinding(t, cmd.Run, results)
+}
+
+func TestUseCommand_Run_ConcurrentArgumentBinding(t *testing.T) {
+	results := make(chan concurrentBindingResult, 2)
+	concurrentBindingResults = results
+	cmd := MustUseCommand[*concurrentBindingRunner]("concurrent", "Concurrent command")
+
+	assertConcurrentArgumentBinding(t, cmd.Run, results)
+}
+
+func assertConcurrentArgumentBinding(t *testing.T, run func(...string) error, results <-chan concurrentBindingResult) {
+	t.Helper()
+
+	concurrentBindingStarted = make(chan struct{})
+	concurrentBindingRelease = make(chan struct{})
+
+	firstRun := make(chan error, 1)
+	go func() {
+		firstRun <- run("first", "wait")
+	}()
+
+	select {
+	case <-concurrentBindingStarted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("first run did not reach the binding barrier")
+	}
+
+	if err := run("second", "ready"); err != nil {
+		t.Fatalf("second run failed: %v", err)
+	}
+	close(concurrentBindingRelease)
+
+	select {
+	case err := <-firstRun:
+		if err != nil {
+			t.Fatalf("first run failed: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("first run did not finish")
+	}
+
+	want := map[concurrentBindingResult]bool{
+		{first: "first", second: "wait"}:   true,
+		{first: "second", second: "ready"}: true,
+	}
+	for range 2 {
+		select {
+		case got := <-results:
+			if !want[got] {
+				t.Fatalf("arguments leaked between concurrent runs: %#v", got)
+			}
+			delete(want, got)
+		case <-time.After(10 * time.Second):
+			t.Fatal("handler did not return a result")
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing concurrent run results: %#v", want)
+	}
+}
+
 func TestUseCommand_DoesNotRequireEmbeddedCommand(t *testing.T) {
 	lastPlainRunner = plainRunner{}
 
@@ -432,6 +668,232 @@ func TestUseCommand_DoesNotRequireEmbeddedCommand(t *testing.T) {
 	}
 	if lastPlainRunner.Value != "value" {
 		t.Fatalf("expected bound value, got %q", lastPlainRunner.Value)
+	}
+}
+
+func TestUseCommand_RejectsArgumentTagCollisions(t *testing.T) {
+	tests := []struct {
+		name   string
+		create func() error
+	}{
+		{
+			name: "long names",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					First  string `cli:"value"`
+					Second string `cli:"value"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "short names",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					First  string `cli:"first" short:"v"`
+					Second string `cli:"second" short:"v"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "long and short names",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					First  string `cli:"v"`
+					Second string `cli:"second" short:"v"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "long and short name on the same field",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value string `cli:"v" short:"v"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "built-in long help name",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Help bool `cli:"help"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "built-in short help name",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Help bool `cli:"show-help" short:"h"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.create(); !errors.Is(err, ErrDuplicateIdentifier) {
+				t.Fatalf("expected duplicate identifier error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestUseCommand_RejectsUnsupportedFieldTypes(t *testing.T) {
+	tests := []struct {
+		name   string
+		create func() error
+	}{
+		{
+			name: "positional argument",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value map[string]string `cli:"0"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "option",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value map[string]string `cli:"value"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "slice option element",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value []map[string]string `cli:"value"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "interface option",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value encoding.TextUnmarshaler `cli:"value"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.create()
+			if err == nil || !strings.Contains(err.Error(), "unsupported command field type") {
+				t.Fatalf("expected unsupported field type error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestUseCommand_RejectsInvalidOptionIdentifiers(t *testing.T) {
+	tests := []struct {
+		name   string
+		create func() error
+	}{
+		{
+			name: "hyphen-prefixed long name",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value string `cli:"-bad"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "valued long name",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value string `cli:"bad=value"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+		{
+			name: "hyphen-prefixed short name",
+			create: func() error {
+				_, err := UseCommand[*struct {
+					Command
+					Value string `cli:"value" short:"-v"`
+				}]("test", "Test command")
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.create(); !errors.Is(err, ErrInvalidIdentifier) {
+				t.Fatalf("expected invalid identifier error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestUseCommand_SortsSparsePositionalIndexes(t *testing.T) {
+	cmd, err := UseCommand[*struct {
+		Command
+		Zero  string `cli:"0"`
+		Five  string `cli:"5"`
+		Three string `cli:"3"`
+		Seven string `cli:"7"`
+	}]("test", "Test command")
+	if err != nil {
+		t.Fatalf("expected sparse positional indexes to be accepted, got %v", err)
+	}
+
+	var got []int
+	for _, spec := range cmd.argSpecs {
+		if spec.index >= 0 {
+			got = append(got, spec.index)
+		}
+	}
+	if want := []int{0, 3, 5, 7}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected positional indexes %v, got %v", want, got)
+	}
+}
+
+func TestUseCommand_AllowsDuplicatePositionalIndexes(t *testing.T) {
+	_, err := UseCommand[*struct {
+		Command
+		First  string `cli:"0"`
+		Second string `cli:"0"`
+	}]("test", "Test command")
+	if err != nil {
+		t.Fatalf("expected duplicate positional indexes to be accepted with unspecified order, got %v", err)
+	}
+}
+
+func TestUseCommand_RejectsNegativePositionalIndex(t *testing.T) {
+	_, err := UseCommand[*struct {
+		Command
+		Value string `cli:"-1"`
+	}]("test", "Test command")
+	if err == nil {
+		t.Fatal("expected negative positional index error")
 	}
 }
 
@@ -566,11 +1028,11 @@ func TestCommand_RunContext_SignalHandling(t *testing.T) {
 		}
 
 		var out bytes.Buffer
-		cmd.SetConfig(Config{
-			IgnoreSignals: []os.Signal{os.Interrupt},
-			Log:           &out,
-			ErrorLog:      &out,
-		})
+		cmd.SetConfig(NewConfig(
+			WithIgnoreSignals(os.Interrupt),
+			WithLog(&out),
+			WithErrorLog(&out),
+		))
 
 		ready := make(chan struct{})
 

@@ -8,22 +8,48 @@ import (
 	"strings"
 )
 
+func supportsArgumentType(argType reflect.Type) bool {
+	if argType.Kind() == reflect.Interface {
+		return false
+	}
+
+	textUnmarshalerType := reflect.TypeFor[encoding.TextUnmarshaler]()
+	if reflect.PointerTo(argType).Implements(textUnmarshalerType) || argType.Implements(textUnmarshalerType) {
+		return true
+	}
+
+	switch argType.Kind() {
+	case reflect.String,
+		reflect.Bool,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.Float32, reflect.Float64,
+		reflect.Complex64, reflect.Complex128:
+		return true
+	default:
+		return false
+	}
+}
+
 func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
 	textUnmarshalerType := reflect.TypeFor[encoding.TextUnmarshaler]()
 	if reflect.PointerTo(argType).Implements(textUnmarshalerType) {
 		value := reflect.New(argType)
 		unmarshaler := value.Interface().(encoding.TextUnmarshaler)
 		if err := unmarshaler.UnmarshalText([]byte(arg)); err != nil {
-			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %v", ErrInvalidArgument, err)
+			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %w", ErrInvalidArgument, err)
 		}
 		return value.Elem(), nil
 	}
 
 	if argType.Implements(textUnmarshalerType) {
 		value := reflect.New(argType).Elem()
+		if argType.Kind() == reflect.Pointer {
+			value = reflect.New(argType.Elem())
+		}
 		unmarshaler := value.Interface().(encoding.TextUnmarshaler)
 		if err := unmarshaler.UnmarshalText([]byte(arg)); err != nil {
-			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %v", ErrInvalidArgument, err)
+			return reflect.Value{}, fmt.Errorf("%w: failed to parse argument: %w", ErrInvalidArgument, err)
 		}
 		return value, nil
 	}
@@ -70,108 +96,107 @@ func parseArg(arg string, argType reflect.Type) (reflect.Value, error) {
 	return value, nil
 }
 
-// 引数列を、argSpecsのvaluesに割り当てる
-func bindArgsToValues(args []string, argSpecs []argSpec) error {
-	for i := range argSpecs {
-		argSpecs[i].value = reflect.Value{}
-	}
-
-	var targetArg *argSpec
+// 引数列を、argSpecsに対応する実行ローカルなvaluesに割り当てる
+func bindArgsToValues(args []string, argSpecs []argSpec) ([]reflect.Value, error) {
+	values := make([]reflect.Value, len(argSpecs))
+	targetIndex := -1
 	var positionalIndex int
 
-	readArg := func(arg string, aspec *argSpec) error {
+	readArg := func(arg string, specIndex int) error {
+		aspec := argSpecs[specIndex]
 		if strings.Contains(arg, "=") {
 			parts := strings.SplitN(arg, "=", 2)
+			valueType := aspec.typeInfo
+			if valueType.Kind() == reflect.Slice {
+				valueType = valueType.Elem()
+			}
 
-			value, err := parseArg(parts[1], aspec.typeInfo)
+			value, err := parseArg(parts[1], valueType)
 			if err != nil {
-				return fmt.Errorf("%w: failed to parse option %q: %v", ErrInvalidArgument, parts[0], err)
+				return fmt.Errorf("%w: failed to parse option %q: %w", ErrInvalidArgument, parts[0], err)
 			}
 
 			if aspec.typeInfo.Kind() == reflect.Slice {
-				if !aspec.value.IsValid() {
-					aspec.value = reflect.MakeSlice(aspec.typeInfo, 0, 0)
-				}
-				aspec.value = reflect.Append(aspec.value, value)
+				values[specIndex] = reflect.Append(reflect.MakeSlice(aspec.typeInfo, 0, 1), value)
 			} else {
-				aspec.value = value
+				values[specIndex] = value
 			}
 		} else if aspec.typeInfo.Kind() == reflect.Bool {
-			aspec.value = reflect.New(aspec.typeInfo).Elem()
-			aspec.value.SetBool(true)
+			values[specIndex] = reflect.New(aspec.typeInfo).Elem()
+			values[specIndex].SetBool(true)
 		} else {
-			targetArg = aspec
+			targetIndex = specIndex
 		}
 		return nil
 	}
 
 	for _, arg := range args {
-		if targetArg == nil {
-			if aspec, ok := getArgSpecByFlag(argSpecs, arg); ok {
+		if targetIndex < 0 {
+			if specIndex, ok := getArgSpecIndexByFlag(argSpecs, arg); ok {
 				// オプション引数
 
-				if err := readArg(arg, aspec); err != nil {
-					return err
+				if err := readArg(arg, specIndex); err != nil {
+					return nil, err
 				}
 			} else {
 				// 位置引数
 
 				if positionalIndex >= len(argSpecs) || argSpecs[positionalIndex].index < 0 {
-					return fmt.Errorf("%w: unexpected positional argument %q", ErrInvalidArgument, arg)
+					return nil, fmt.Errorf("%w: unexpected positional argument %q", ErrInvalidArgument, arg)
 				}
 
 				value, err := parseArg(arg, argSpecs[positionalIndex].typeInfo)
 				if err != nil {
-					return fmt.Errorf("%w: failed to parse argument %d: %v", ErrInvalidArgument, positionalIndex+1, err)
+					return nil, fmt.Errorf("%w: failed to parse argument %d: %w", ErrInvalidArgument, positionalIndex+1, err)
 				}
-				argSpecs[positionalIndex].value = value
+				values[positionalIndex] = value
 				positionalIndex++
 			}
-		} else if targetArg.typeInfo.Kind() == reflect.Slice {
-			if aspec, ok := getArgSpecByFlag(argSpecs, arg); ok {
+		} else if argSpecs[targetIndex].typeInfo.Kind() == reflect.Slice {
+			if specIndex, ok := getArgSpecIndexByFlag(argSpecs, arg); ok {
 				// オプション引数
 
-				if err := readArg(arg, aspec); err != nil {
-					return err
+				if err := readArg(arg, specIndex); err != nil {
+					return nil, err
 				}
 			} else {
 				// スライスの追加
-				value, err := parseArg(arg, targetArg.typeInfo.Elem())
+				value, err := parseArg(arg, argSpecs[targetIndex].typeInfo.Elem())
 				if err != nil {
-					return fmt.Errorf("%w: failed to parse argument %q: %v", ErrInvalidArgument, arg, err)
+					return nil, fmt.Errorf("%w: failed to parse argument %q: %w", ErrInvalidArgument, arg, err)
 				}
 
-				if !targetArg.value.IsValid() {
-					targetArg.value = reflect.MakeSlice(targetArg.typeInfo, 0, 0)
+				if !values[targetIndex].IsValid() {
+					values[targetIndex] = reflect.MakeSlice(argSpecs[targetIndex].typeInfo, 0, 0)
 				}
 
-				targetArg.value = reflect.Append(targetArg.value, value)
+				values[targetIndex] = reflect.Append(values[targetIndex], value)
 			}
 		} else {
 			// オプション引数
-			value, err := parseArg(arg, targetArg.typeInfo)
+			value, err := parseArg(arg, argSpecs[targetIndex].typeInfo)
 			if err != nil {
-				return fmt.Errorf("%w: failed to parse argument %q: %v", ErrInvalidArgument, arg, err)
+				return nil, fmt.Errorf("%w: failed to parse argument %q: %w", ErrInvalidArgument, arg, err)
 			}
-			targetArg.value = value
-			targetArg = nil
+			values[targetIndex] = value
+			targetIndex = -1
 		}
 	}
 
 	if positionalIndex < len(argSpecs) && argSpecs[positionalIndex].index >= 0 {
-		return fmt.Errorf("%w: missing required positional argument: %s", ErrInvalidArgument, argSpecs[positionalIndex].name)
+		return nil, fmt.Errorf("%w: missing required positional argument: %s", ErrInvalidArgument, argSpecs[positionalIndex].name)
 	}
 
-	if targetArg != nil && targetArg.typeInfo.Kind() != reflect.Slice {
-		return fmt.Errorf("%w: missing value for option: %s", ErrInvalidArgument, targetArg.name)
+	if targetIndex >= 0 && argSpecs[targetIndex].typeInfo.Kind() != reflect.Slice {
+		return nil, fmt.Errorf("%w: missing value for option: %s", ErrInvalidArgument, argSpecs[targetIndex].name)
 	}
 
-	return nil
+	return values, nil
 }
 
-func getArgSpecByFlag(argSpecs []argSpec, arg string) (*argSpec, bool) {
+func getArgSpecIndexByFlag(argSpecs []argSpec, arg string) (int, bool) {
 	if !strings.HasPrefix(arg, "-") {
-		return nil, false
+		return 0, false
 	}
 	if strings.Contains(arg, "=") {
 		parts := strings.SplitN(arg, "=", 2)
@@ -181,9 +206,9 @@ func getArgSpecByFlag(argSpecs []argSpec, arg string) (*argSpec, bool) {
 	arg = strings.TrimLeft(arg, "-")
 	for i := range argSpecs {
 		if argSpecs[i].name == arg || argSpecs[i].short == arg {
-			return &argSpecs[i], true
+			return i, true
 		}
 	}
 
-	return nil, false
+	return 0, false
 }

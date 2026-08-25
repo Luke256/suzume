@@ -13,7 +13,7 @@ var (
 	ErrCommandNotFound = errors.New("Command not found")
 )
 
-// App represents a CLI application that can contain commands and sub-applications.
+// App represents a CLI App that can contain commands and sub-applications.
 type App struct {
 	// appPath is the path of parent applications leading to this app, used for help message generation.
 	appPath []string
@@ -28,84 +28,146 @@ type App struct {
 	description string
 
 	// commands is the list of commands directly under this application.
-	commands []*Executable
+	commands []Executable
 
 	// apps is the list of sub-applications directly under this application.
-	apps []*App
+	apps []App
 
-	// config holds the configuration for the application, such as log output destinations.
-	config Config
+	// config holds an explicitly assigned configuration. A nil value inherits from the parent.
+	config *Config
+
+	// identifiers holds the set of identifiers for this application, used for collision detection.
+	identifiers map[string]struct{}
 }
 
-// NewApp creates a new App with the given name and description, and initializes it with the default configuration.
-func NewApp(name, description string) *App {
+// NewApp creates a new App with the given name and description.
+// App names beginning with a hyphen are rejected.
+func NewApp(name, description string) (*App, error) {
+	if name == "" {
+		return nil, fmt.Errorf("App name cannot be empty")
+	}
+	if err := validateIdentifier(name); err != nil {
+		return nil, err
+	}
+
 	return &App{
 		name:        name,
 		description: description,
-		config:      defaultConfig(),
-	}
+		identifiers: map[string]struct{}{
+			"help": {},
+		},
+	}, nil
 }
 
-// AddCommand adds a command to the application. If the command is nil, it is ignored.
-func (app *App) AddCommand(cmd *Executable) {
-	if cmd != nil {
-		app.commands = append(app.commands, cmd)
+// MustNewApp creates a new App and panics if an error occurs.
+func MustNewApp(name, description string) *App {
+	app, err := NewApp(name, description)
+	if err != nil {
+		panic(err)
 	}
-}
-
-// AddApp adds a sub-application to the application. If the sub-application is nil, it is ignored.
-func (app *App) AddApp(subApp *App) {
-	if subApp != nil {
-		app.apps = append(app.apps, subApp)
-	}
-}
-
-// Alias adds an alias for the application. If the alias name is empty, it is ignored.
-func (app *App) Alias(name string) *App {
-	if name == "" {
-		return app
-	}
-
-	app.aliases = append(app.aliases, name)
 	return app
 }
 
-// SetConfig sets the configuration for the application. This configuration will be inherited by sub-applications and commands unless they have their own configuration set.
-func (app *App) SetConfig(config Config) {
-	app.config = config
+// AddCommand adds a value copy of a command to the application. If the command is nil, it is ignored.
+// Its registration identifiers are fixed at the time of the call.
+// It returns ErrDuplicateIdentifier when an identifier is already registered.
+func (app *App) AddCommand(cmd *Executable) error {
+	if cmd == nil {
+		return nil
+	}
+
+	if err := registerIdentifiers(app.identifiers, cmd.name, cmd.aliases...); err != nil {
+		return fmt.Errorf("failed to register command: %w", err)
+	}
+
+	registered := *cmd
+	app.commands = append(app.commands, registered)
+
+	return nil
+}
+
+// AddApp adds a value copy of a sub-application. If the sub-application is nil, it is ignored.
+// Its registration identifiers are fixed at the time of the call.
+// It returns ErrDuplicateIdentifier when an identifier is already registered.
+func (app *App) AddApp(subApp *App) error {
+	if subApp == nil {
+		return nil
+	}
+
+	if err := registerIdentifiers(app.identifiers, subApp.name, subApp.aliases...); err != nil {
+		return fmt.Errorf("failed to register app: %w", err)
+	}
+
+	registered := *subApp
+	app.apps = append(app.apps, registered)
+	return nil
+}
+
+// Alias adds an alias for the application. If the alias name is empty, it is ignored.
+// Alias names beginning with a hyphen are rejected.
+func (app *App) Alias(name string) error {
+	if name == "" {
+		return nil
+	}
+	if err := validateIdentifier(name); err != nil {
+		return err
+	}
+
+	app.aliases = append(app.aliases, name)
+	return nil
+}
+
+// SetConfig sets the application's Config. This configuration will be inherited by sub-applications and commands unless they have their own configuration set.
+func (app *App) SetConfig(configuration Config) {
+	app.config = &configuration
 }
 
 // RunContext executes the application with the given context and arguments.
 // It first checks if the arguments indicate that the help message should be shown, then it tries to find a matching command or sub-application to execute.
 // If no matching command or sub-application is found, it returns an error.
 func (app *App) RunContext(ctx context.Context, args ...string) error {
+	return app.runContext(ctx, nil, args...)
+}
+
+func (app *App) runContext(ctx context.Context, inheritedConfig *Config, args ...string) error {
+	configuration := app.resolveConfig(inheritedConfig)
 	args = app.resolveArgs(args)
 
-	if shouldShowAppHelp(args) {
-		app.showHelp()
+	showHelp, invalidHelpArg := inspectAppHelpArgs(args)
+	if invalidHelpArg != "" {
+		resolvedConfig := materializeConfig(configuration)
+		err := unknownOptionError(invalidHelpArg)
+		fmt.Fprintln(resolvedConfig.errorLog, err)
+		app.showHelp(resolvedConfig)
+		return err
+	}
+	if showHelp {
+		app.showHelp(materializeConfig(configuration))
 		return nil
 	}
 
 	if cmd, cmdArgs, err := app.findCommand(args); err == nil {
-		if cmd.config.inherit {
-			cmd.config = app.config
-		}
-		return cmd.RunContext(ctx, cmdArgs...)
+		return cmd.runContext(ctx, configuration, app.fullPath()+" "+cmd.name, cmdArgs...)
 	}
 
 	subApp, subArgs, err := app.findSubApp(args)
 	if err != nil {
 		if errors.Is(err, ErrCommandNotFound) {
-			fmt.Fprintf(app.config.ErrorLog, "Error: %s\n", err.Error())
-			app.showHelp()
+			resolvedConfig := materializeConfig(configuration)
+			fmt.Fprintf(resolvedConfig.errorLog, "Error: %s\n", err.Error())
+			app.showHelp(resolvedConfig)
 		}
 		return err
 	}
 
-	if subApp.config.inherit {
-		subApp.config = app.config
+	return subApp.runContext(ctx, configuration, subArgs...)
+}
+
+func (app *App) resolveConfig(inheritedConfig *Config) *Config {
+	if app.config != nil {
+		return app.config
 	}
-	return subApp.RunContext(ctx, subArgs...)
+	return inheritedConfig
 }
 
 // RunContextAndExit executes the application with the given context and arguments and exits the process with code 1 if an error occurs.
@@ -132,16 +194,27 @@ func (app *App) resolveArgs(args []string) []string {
 	return args
 }
 
-func shouldShowAppHelp(args []string) bool {
+func inspectAppHelpArgs(args []string) (showHelp bool, invalidArg string) {
 	if len(args) == 0 {
-		return true
+		return true, ""
+	}
+	if isValuedHelpArg(args[0]) {
+		return false, args[0]
+	}
+	if args[0] != "help" && args[0] != "--help" && args[0] != "-h" {
+		return false, ""
 	}
 
-	return args[0] == "help" || args[0] == "--help" || args[0] == "-h"
+	for _, arg := range args[1:] {
+		if isValuedHelpArg(arg) {
+			return false, arg
+		}
+	}
+	return true, ""
 }
 
-func (app *App) showHelp() {
-	out := app.config.Log
+func (app *App) showHelp(configuration Config) {
+	out := configuration.log
 	appPath := app.fullPath()
 	fmt.Fprintf(out, "%s\n\n", appPath)
 	if app.description != "" {
@@ -217,7 +290,8 @@ func (app *App) findCommand(args []string) (*Executable, []string, error) {
 
 	var head string = args[0]
 
-	for _, cmd := range app.commands {
+	for i := range app.commands {
+		cmd := &app.commands[i]
 		if matchesName(cmd.name, cmd.aliases, head) {
 			return cmd, args[1:], nil
 		}
@@ -233,7 +307,8 @@ func (app *App) findSubApp(args []string) (*App, []string, error) {
 
 	var head string = args[0]
 
-	for _, subApp := range app.apps {
+	for i := range app.apps {
+		subApp := &app.apps[i]
 		if matchesName(subApp.name, subApp.aliases, head) {
 			return app.scopedSubApp(subApp), args[1:], nil
 		}

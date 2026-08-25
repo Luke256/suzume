@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
-	"slices"
+	"strings"
 )
 
 var (
@@ -51,7 +51,7 @@ type Executable struct {
 	handler       commandHandler
 	argSpecs      []argSpec
 	defaultValues defaultValuesProvider
-	config        Config
+	config        *Config
 }
 
 type argSpec struct {
@@ -62,15 +62,19 @@ type argSpec struct {
 	fieldName      string
 	defaultText    string
 	hasDefaultText bool
-	value          reflect.Value
 	typeInfo       reflect.Type
 }
 
 // NewCommand creates a new Executable with the given name, description, and handler function.
-// The handler function can be any function that takes zero or more arguments and returns an error.
+// The handler may accept supported positional argument types and context.Context, and must return
+// either no values or a single error.
+// Command names beginning with a hyphen are rejected.
 func NewCommand(name, description string, runFunc any) (*Executable, error) {
 	if name == "" {
 		return nil, fmt.Errorf("Command name cannot be empty")
+	}
+	if err := validateIdentifier(name); err != nil {
+		return nil, err
 	}
 
 	argSpecs, handler, err := createFunctionHandler(runFunc)
@@ -83,7 +87,6 @@ func NewCommand(name, description string, runFunc any) (*Executable, error) {
 		description: description,
 		handler:     handler,
 		argSpecs:    argSpecs,
-		config:      defaultConfig(),
 	}, nil
 }
 
@@ -99,9 +102,14 @@ func MustNewCommand(name, description string, runFunc any) *Executable {
 
 // UseCommand creates a new Executable based on a CommandDefinition type.
 // Its exported fields are used to generate argument specifications.
+// Argument identifiers must be unique, and positional indexes must be non-negative.
+// Command names beginning with a hyphen are rejected.
 func UseCommand[T CommandDefinition](name, description string) (*Executable, error) {
 	if name == "" {
 		return nil, fmt.Errorf("Command name cannot be empty")
+	}
+	if err := validateIdentifier(name); err != nil {
+		return nil, err
 	}
 
 	argSpecs, handler, defaultValues, err := createCommandHandler[T]()
@@ -115,7 +123,6 @@ func UseCommand[T CommandDefinition](name, description string) (*Executable, err
 		handler:       handler,
 		argSpecs:      argSpecs,
 		defaultValues: defaultValues,
-		config:        defaultConfig(),
 	}, nil
 }
 
@@ -129,40 +136,53 @@ func MustUseCommand[T CommandDefinition](name, description string) *Executable {
 }
 
 // Alias adds an alias for the command. If the alias name is empty, it is ignored.
-func (cmd *Executable) Alias(name string) *Executable {
+// Alias names beginning with a hyphen are rejected.
+func (cmd *Executable) Alias(name string) error {
 	if name == "" {
-		return cmd
+		return nil
+	}
+	if err := validateIdentifier(name); err != nil {
+		return err
 	}
 
 	cmd.aliases = append(cmd.aliases, name)
-	return cmd
+	return nil
 }
 
-// SetConfig sets the configuration for the command.
+// SetConfig sets the command's Config.
 // This configuration will be used when the command is executed, and it can override the configuration inherited from the parent application.
-func (cmd *Executable) SetConfig(config Config) {
-	cmd.config = config
+func (cmd *Executable) SetConfig(configuration Config) {
+	cmd.config = &configuration
 }
 
 // RunContext executes the command with the given context and arguments.
 func (cmd *Executable) RunContext(ctx context.Context, args ...string) error {
+	return cmd.runContext(ctx, nil, cmd.name, args...)
+}
+
+func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *Config, commandPath string, args ...string) error {
 	if ctx == nil {
 		return fmt.Errorf("Context cannot be nil")
 	}
 
+	config := materializeConfig(cmd.resolveConfig(inheritedConfig))
 	if args == nil {
 		args = os.Args[1:]
 	}
 
-	if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
-		cmd.showHelp()
+	showHelp, invalidHelpArg := inspectHelpArgs(args)
+	if invalidHelpArg != "" {
+		return cmd.handleRunError(unknownOptionError(invalidHelpArg), config, commandPath)
+	}
+	if showHelp {
+		cmd.showHelp(config, commandPath)
 		return nil
 	}
 
 	var cmdCtx context.Context
 
-	if len(cmd.config.IgnoreSignals) > 0 {
-		c, stop := signal.NotifyContext(ctx, cmd.config.IgnoreSignals...)
+	if len(config.ignoreSignals) > 0 {
+		c, stop := signal.NotifyContext(ctx, config.ignoreSignals...)
 		defer stop()
 		cmdCtx = c
 	} else {
@@ -172,16 +192,46 @@ func (cmd *Executable) RunContext(ctx context.Context, args ...string) error {
 	}
 
 	err := cmd.handler(cmdCtx, args...)
-
 	if err != nil {
-		if errors.Is(err, ErrInvalidArgument) {
-			fmt.Fprintln(cmd.config.ErrorLog, err)
-			cmd.showHelp()
-		}
-		return err
+		return cmd.handleRunError(err, config, commandPath)
 	}
 
 	return nil
+}
+
+func (cmd *Executable) handleRunError(err error, config Config, commandPath string) error {
+	if errors.Is(err, ErrInvalidArgument) {
+		fmt.Fprintln(config.errorLog, err)
+		cmd.showHelp(config, commandPath)
+	}
+	return err
+}
+
+func inspectHelpArgs(args []string) (showHelp bool, invalidArg string) {
+	for _, arg := range args {
+		if isValuedHelpArg(arg) {
+			return false, arg
+		}
+		if arg == "--help" || arg == "-h" {
+			showHelp = true
+		}
+	}
+	return showHelp, ""
+}
+
+func isValuedHelpArg(arg string) bool {
+	return strings.HasPrefix(arg, "--help=") || strings.HasPrefix(arg, "-h=")
+}
+
+func unknownOptionError(arg string) error {
+	return fmt.Errorf("%w: unknown option %q", ErrInvalidArgument, arg)
+}
+
+func (cmd *Executable) resolveConfig(inheritedConfig *Config) *Config {
+	if cmd.config != nil {
+		return cmd.config
+	}
+	return inheritedConfig
 }
 
 // RunContextAndExit executes the command with the given context and arguments and exits the program with a non-zero status code if an error occurs.

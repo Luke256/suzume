@@ -15,23 +15,54 @@ const (
 	contextIndex = -2
 )
 
+// pascalToKebab converts a PascalCase string to kebab-case.
+// For example, "HelloWorld" becomes "hello-world".
+// APIKey -> api-key
 func pascalToKebab(s string) string {
-	var result []string
-	for i, r := range s {
+	runes := []rune(s)
+	var sb strings.Builder
+
+	for i, r := range runes {
 		if i > 0 && unicode.IsUpper(r) {
-			result = append(result, "-")
+			prev := runes[i-1]
+
+			var next rune
+			hasNext := i+1 < len(runes)
+			if hasNext {
+				next = runes[i+1]
+			}
+
+			if unicode.IsLower(prev) ||
+				unicode.IsDigit(prev) ||
+				(unicode.IsUpper(prev) && hasNext && unicode.IsLower(next)) {
+				sb.WriteRune('-')
+			}
 		}
-		result = append(result, string(unicode.ToLower(r)))
+
+		sb.WriteRune(unicode.ToLower(r))
 	}
-	return strings.Join(result, "")
+
+	return sb.String()
 }
 
 // 固定引数の関数をコマンドのハンドラー
 // args: ["arg1", "arg2", ...]
 func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
-	v := reflect.TypeOf(runFunc)
-	if v.Kind() != reflect.Func {
+	runValue := reflect.ValueOf(runFunc)
+	if !runValue.IsValid() {
+		return nil, nil, fmt.Errorf("runFunc cannot be nil")
+	}
+	if runValue.Kind() != reflect.Func {
 		return nil, nil, fmt.Errorf("runFunc must be a function")
+	}
+	if runValue.IsNil() {
+		return nil, nil, fmt.Errorf("runFunc cannot be nil")
+	}
+
+	v := runValue.Type()
+	errorType := reflect.TypeFor[error]()
+	if v.NumOut() > 1 || v.NumOut() == 1 && v.Out(0) != errorType {
+		return nil, nil, fmt.Errorf("runFunc must return no values or a single error")
 	}
 
 	argSpecs := make([]argSpec, v.NumIn()+1)
@@ -56,6 +87,9 @@ func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
 				typeInfo: arg,
 			}
 		} else {
+			if !supportsArgumentType(arg) {
+				return nil, nil, fmt.Errorf("unsupported function handler argument type %v: argument %d", arg, i+1)
+			}
 			argSpecs[i] = argSpec{
 				index:    i,
 				name:     fmt.Sprintf("arg%d", argIndex),
@@ -68,7 +102,8 @@ func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
 	sortArgSpecs(argSpecs)
 
 	return argSpecs, func(ctx context.Context, args ...string) error {
-		if err := bindArgsToValues(args, argSpecs); err != nil {
+		values, err := bindArgsToValues(args, argSpecs)
+		if err != nil {
 			return err
 		}
 
@@ -79,14 +114,14 @@ func createFunctionHandler(runFunc any) ([]argSpec, commandHandler, error) {
 			}
 		}
 
-		for _, aspec := range argSpecs {
+		for i, aspec := range argSpecs {
 			if aspec.index >= 0 {
-				in[aspec.index] = aspec.value
+				in[aspec.index] = values[i]
 			}
 		}
 
-		out := reflect.ValueOf(runFunc).Call(in)
-		if len(out) == 1 && out[0].Type() == reflect.TypeFor[error]() {
+		out := runValue.Call(in)
+		if len(out) == 1 {
 			if !out[0].IsNil() {
 				return out[0].Interface().(error)
 			}
@@ -106,6 +141,10 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, def
 
 	commandType := reflect.TypeFor[Command]()
 	argSpecs := make([]argSpec, 0, structType.NumField()+1)
+	identifiers := map[string]struct{}{
+		helpArgSpec.name:  {},
+		helpArgSpec.short: {},
+	}
 
 	for i := range structType.NumField() {
 		field := structType.Field(i)
@@ -121,6 +160,9 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, def
 
 		if idx, err := strconv.Atoi(field.Tag.Get("cli")); err == nil {
 			// positional argument
+			if idx < 0 {
+				return nil, nil, nil, fmt.Errorf("invalid positional argument index %d for field %s", idx, field.Name)
+			}
 
 			if field.Type.Kind() == reflect.Slice {
 				return nil, nil, nil, fmt.Errorf("slice fields cannot be used as positional arguments: %s", field.Name)
@@ -149,6 +191,36 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, def
 			if aspec.name == "" {
 				aspec.name = pascalToKebab(field.Name)
 			}
+		}
+
+		valueType := field.Type
+		if valueType.Kind() == reflect.Slice {
+			valueType = valueType.Elem()
+		}
+		if !supportsArgumentType(valueType) {
+			return nil, nil, nil, fmt.Errorf("unsupported command field type %v: field %s", field.Type, field.Name)
+		}
+
+		if aspec.index == optionsIndex {
+			if err := validateOptionIdentifier(aspec.name); err != nil {
+				return nil, nil, nil, fmt.Errorf("invalid long option name for field %s: %w", field.Name, err)
+			}
+			if aspec.short != "" {
+				if err := validateOptionIdentifier(aspec.short); err != nil {
+					return nil, nil, nil, fmt.Errorf("invalid short option name for field %s: %w", field.Name, err)
+				}
+			}
+		}
+
+		aliases := []string(nil)
+		if aspec.short != "" {
+			if aspec.short == aspec.name {
+				return nil, nil, nil, fmt.Errorf("invalid argument tags for field %s: %w: %s", field.Name, ErrDuplicateIdentifier, aspec.name)
+			}
+			aliases = append(aliases, aspec.short)
+		}
+		if err := registerIdentifiers(identifiers, aspec.name, aliases...); err != nil {
+			return nil, nil, nil, fmt.Errorf("invalid argument tags for field %s: %w", field.Name, err)
 		}
 
 		argSpecs = append(argSpecs, aspec)
@@ -186,14 +258,15 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, def
 	}
 
 	return argSpecs, func(ctx context.Context, args ...string) error {
-		if err := bindArgsToValues(args, argSpecs); err != nil {
+		values, err := bindArgsToValues(args, argSpecs)
+		if err != nil {
 			return err
 		}
 
 		runner, runnerValue := newRunner()
-		for _, aspec := range argSpecs {
-			if aspec.value.IsValid() {
-				runnerValue.FieldByName(aspec.fieldName).Set(aspec.value)
+		for i, aspec := range argSpecs {
+			if values[i].IsValid() {
+				runnerValue.FieldByName(aspec.fieldName).Set(values[i])
 			}
 		}
 

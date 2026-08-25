@@ -25,6 +25,12 @@ type namedInt16 int16
 
 type namedBool bool
 
+type failingPointerText string
+
+type failingValueText string
+
+var errTextUnmarshal = errors.New("text unmarshaling failed")
+
 const countryJapan country = 81
 
 func (c *country) UnmarshalText(text []byte) error {
@@ -33,6 +39,14 @@ func (c *country) UnmarshalText(text []byte) error {
 	}
 	*c = countryJapan
 	return nil
+}
+
+func (*failingPointerText) UnmarshalText([]byte) error {
+	return errTextUnmarshal
+}
+
+func (failingValueText) UnmarshalText([]byte) error {
+	return errTextUnmarshal
 }
 
 func TestParseArg_Primitives(t *testing.T) {
@@ -147,6 +161,32 @@ func TestParseArg_TextUnmarshalerTakesPriorityOverUnderlyingType(t *testing.T) {
 	}
 }
 
+func TestParseArg_PreservesTextUnmarshalerError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		typeInfo reflect.Type
+	}{
+		{name: "pointer receiver", typeInfo: reflect.TypeFor[failingPointerText]()},
+		{name: "value receiver", typeInfo: reflect.TypeFor[failingValueText]()},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := parseArg("invalid", test.typeInfo)
+			if !errors.Is(err, ErrInvalidArgument) {
+				t.Fatalf("expected ErrInvalidArgument, got %v", err)
+			}
+			if !errors.Is(err, errTextUnmarshal) {
+				t.Fatalf("expected text unmarshaler error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestBindArgsToValues_BindsPositionalAndOptions(t *testing.T) {
 	t.Parallel()
 
@@ -158,24 +198,53 @@ func TestBindArgsToValues_BindsPositionalAndOptions(t *testing.T) {
 	}
 	sortArgSpecs(specs)
 
-	err := bindArgsToValues([]string{"alice", "--count=3", "-v", "--task", "build", "test"}, specs)
+	values, err := bindArgsToValues([]string{"alice", "--count=3", "-v", "--task", "build", "test"}, specs)
 	if err != nil {
 		t.Fatalf("bind failed: %v", err)
 	}
 
-	if got := findSpecByName(specs, "name").value.String(); got != "alice" {
+	if got := findValueByName(specs, values, "name").String(); got != "alice" {
 		t.Fatalf("expected positional name alice, got %q", got)
 	}
-	if got := findSpecByName(specs, "count").value.Int(); got != 3 {
+	if got := findValueByName(specs, values, "count").Int(); got != 3 {
 		t.Fatalf("expected count 3, got %d", got)
 	}
-	if !findSpecByName(specs, "verbose").value.Bool() {
+	if !findValueByName(specs, values, "verbose").Bool() {
 		t.Fatalf("expected verbose true")
 	}
 
-	tasks := findSpecByName(specs, "task").value.Interface().([]string)
+	tasks := findValueByName(specs, values, "task").Interface().([]string)
 	if !reflect.DeepEqual(tasks, []string{"build", "test"}) {
 		t.Fatalf("unexpected task values: %#v", tasks)
+	}
+}
+
+func TestBindArgsToValues_BindsSliceOption(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		want []country
+	}{
+		{name: "separated", args: []string{"--country", "JP"}, want: []country{countryJapan}},
+		{name: "valued", args: []string{"--country=JP"}, want: []country{countryJapan}},
+		{name: "valued replaces accumulated values", args: []string{"--country", "JP", "--country=JP"}, want: []country{countryJapan}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			specs := []argSpec{{index: -1, name: "country", typeInfo: reflect.TypeFor[[]country]()}}
+			values, err := bindArgsToValues(test.args, specs)
+			if err != nil {
+				t.Fatalf("bind failed: %v", err)
+			}
+			if got := values[0].Interface().([]country); !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("expected %#v, got %#v", test.want, got)
+			}
+		})
 	}
 }
 
@@ -184,15 +253,15 @@ func TestBindArgsToValues_BoolExplicitFalse(t *testing.T) {
 
 	specs := []argSpec{{index: -1, name: "verbose", short: "v", typeInfo: reflect.TypeFor[bool]()}}
 
-	err := bindArgsToValues([]string{"--verbose=false"}, specs)
+	values, err := bindArgsToValues([]string{"--verbose=false"}, specs)
 	if err != nil {
 		t.Fatalf("bind failed: %v", err)
 	}
 
-	if !specs[0].value.IsValid() {
+	if !values[0].IsValid() {
 		t.Fatalf("expected bool value to be set")
 	}
-	if specs[0].value.Bool() {
+	if values[0].Bool() {
 		t.Fatalf("expected explicit false value")
 	}
 }
@@ -202,13 +271,14 @@ func TestBindArgsToValues_NamedBoolFlag(t *testing.T) {
 
 	specs := []argSpec{{index: -1, name: "enabled", typeInfo: reflect.TypeFor[namedBool]()}}
 
-	if err := bindArgsToValues([]string{"--enabled"}, specs); err != nil {
+	values, err := bindArgsToValues([]string{"--enabled"}, specs)
+	if err != nil {
 		t.Fatalf("bind failed: %v", err)
 	}
-	if specs[0].value.Type() != reflect.TypeFor[namedBool]() {
-		t.Fatalf("expected namedBool type, got %v", specs[0].value.Type())
+	if values[0].Type() != reflect.TypeFor[namedBool]() {
+		t.Fatalf("expected namedBool type, got %v", values[0].Type())
 	}
-	if !specs[0].value.Bool() {
+	if !values[0].Bool() {
 		t.Fatal("expected enabled flag to be true")
 	}
 }
@@ -218,12 +288,57 @@ func TestBindArgsToValues_MissingOptionValue(t *testing.T) {
 
 	specs := []argSpec{{index: -1, name: "count", short: "c", typeInfo: reflect.TypeFor[int]()}}
 
-	err := bindArgsToValues([]string{"--count"}, specs)
+	_, err := bindArgsToValues([]string{"--count"}, specs)
 	if !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("expected ErrInvalidArgument, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "missing value for option: count") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBindArgsToValues_PreservesParseArgError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		args  []string
+		specs []argSpec
+	}{
+		{
+			name:  "positional argument",
+			args:  []string{"invalid"},
+			specs: []argSpec{{index: 0, name: "value", typeInfo: reflect.TypeFor[failingPointerText]()}},
+		},
+		{
+			name:  "valued option",
+			args:  []string{"--value=invalid"},
+			specs: []argSpec{{index: -1, name: "value", typeInfo: reflect.TypeFor[failingPointerText]()}},
+		},
+		{
+			name:  "option argument",
+			args:  []string{"--value", "invalid"},
+			specs: []argSpec{{index: -1, name: "value", typeInfo: reflect.TypeFor[failingPointerText]()}},
+		},
+		{
+			name:  "slice option argument",
+			args:  []string{"--value", "invalid"},
+			specs: []argSpec{{index: -1, name: "value", typeInfo: reflect.TypeFor[[]failingPointerText]()}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := bindArgsToValues(test.args, test.specs)
+			if !errors.Is(err, ErrInvalidArgument) {
+				t.Fatalf("expected ErrInvalidArgument, got %v", err)
+			}
+			if !errors.Is(err, errTextUnmarshal) {
+				t.Fatalf("expected parse argument error, got %v", err)
+			}
+		})
 	}
 }
 
@@ -236,22 +351,34 @@ func TestBindArgsToValues_ResetsPreviousValues(t *testing.T) {
 	}
 	sortArgSpecs(specs)
 
-	err := bindArgsToValues([]string{"alice", "--count", "9"}, specs)
+	firstValues, err := bindArgsToValues([]string{"alice", "--count", "9"}, specs)
 	if err != nil {
 		t.Fatalf("first bind failed: %v", err)
 	}
 
-	err = bindArgsToValues([]string{"bob"}, specs)
+	secondValues, err := bindArgsToValues([]string{"bob"}, specs)
 	if err != nil {
 		t.Fatalf("second bind failed: %v", err)
 	}
 
-	if got := findSpecByName(specs, "name").value.String(); got != "bob" {
+	if got := findValueByName(specs, secondValues, "name").String(); got != "bob" {
 		t.Fatalf("expected second positional value bob, got %q", got)
 	}
-	if findSpecByName(specs, "count").value.IsValid() {
+	if findValueByName(specs, secondValues, "count").IsValid() {
 		t.Fatalf("expected optional count to be reset between runs")
 	}
+	if got := findValueByName(specs, firstValues, "count").Int(); got != 9 {
+		t.Fatalf("expected first bind to remain isolated, got %d", got)
+	}
+}
+
+func findValueByName(specs []argSpec, values []reflect.Value, name string) reflect.Value {
+	for i := range specs {
+		if specs[i].name == name {
+			return values[i]
+		}
+	}
+	return reflect.Value{}
 }
 
 func findSpecByName(specs []argSpec, name string) *argSpec {

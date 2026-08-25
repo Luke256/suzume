@@ -5,27 +5,79 @@ import (
 	"os"
 )
 
-// Config represents the configuration for an application or command, including settings for log output and error output.
+// Config contains the runtime settings for an application or command.
+// Create values with DefaultConfig or NewConfig.
 type Config struct {
-	// inherit indicates whether the configuration should be inherited from the parent application.
-	// If true, the application or command will use the configuration of its parent application unless it is overridden by its own configuration.
-	inherit bool
-
-	// Log is the destination for log output. By default, it is set to os.Stdout.
-	Log io.Writer
-
-	// ErrorLog is the destination for error output. By default, it is set to os.Stderr.
-	ErrorLog io.Writer
-
-	// IgnoreSignals is a slice of os.Signal to ignore. By default, command does not ignore any signals.
-	IgnoreSignals []os.Signal
+	log           io.Writer
+	errorLog      io.Writer
+	ignoreSignals []os.Signal
 }
 
-func defaultConfig() Config {
+// ConfigOption configures a value created by NewConfig.
+// Options are provided by this package through the With* functions.
+type ConfigOption interface {
+	apply(*Config)
+}
+
+type configOptionFunc func(*Config)
+
+func (option configOptionFunc) apply(configuration *Config) {
+	option(configuration)
+}
+
+// DefaultConfig returns a Config that writes normal output to os.Stdout,
+// writes errors to os.Stderr, and does not intercept any signals.
+func DefaultConfig() Config {
 	return Config{
-		inherit:      true,
-		Log:          os.Stdout,
-		ErrorLog:     os.Stderr,
-		IgnoreSignals: []os.Signal{},
+		log:      os.Stdout,
+		errorLog: os.Stderr,
 	}
+}
+
+func materializeConfig(configuration *Config) Config {
+	if configuration != nil {
+		return *configuration
+	}
+	return DefaultConfig()
+}
+
+// NewConfig creates a Config with default settings and applies options in order.
+// Nil options are ignored.
+func NewConfig(options ...ConfigOption) Config {
+	configuration := DefaultConfig()
+	for _, option := range options {
+		if option != nil {
+			option.apply(&configuration)
+		}
+	}
+	return configuration
+}
+
+// WithLog sets the destination for normal output.
+// A nil writer leaves the default destination unchanged.
+func WithLog(writer io.Writer) ConfigOption {
+	return configOptionFunc(func(configuration *Config) {
+		if writer != nil {
+			configuration.log = writer
+		}
+	})
+}
+
+// WithErrorLog sets the destination for error output.
+// A nil writer leaves the default destination unchanged.
+func WithErrorLog(writer io.Writer) ConfigOption {
+	return configOptionFunc(func(configuration *Config) {
+		if writer != nil {
+			configuration.errorLog = writer
+		}
+	})
+}
+
+// WithIgnoreSignals sets the signals that cancel a command's context instead of
+// using the process's default signal behavior.
+func WithIgnoreSignals(signals ...os.Signal) ConfigOption {
+	configuredSignals := append([]os.Signal(nil), signals...)
+	return configOptionFunc(func(configuration *Config) {
+		configuration.ignoreSignals = append([]os.Signal(nil), configuredSignals...)
+	})
 }
