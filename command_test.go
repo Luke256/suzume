@@ -257,6 +257,20 @@ func TestCommand_Run_HelpSkipsHandler(t *testing.T) {
 	}
 }
 
+func TestCommand_Run_OptionTerminatorMakesHelpLiteral(t *testing.T) {
+	var got string
+	cmd := MustNewCommand("echo", "Echo command", func(value string) {
+		got = value
+	})
+
+	if err := cmd.Run("--", "--help"); err != nil {
+		t.Fatalf("failed to run command: %v", err)
+	}
+	if got != "--help" {
+		t.Fatalf("expected literal --help argument, got %q", got)
+	}
+}
+
 func TestCommand_Run_RejectsValuedHelpOptions(t *testing.T) {
 	for _, arg := range []string{"--help=false", "--help=true", "--help=", "-h=false"} {
 		t.Run(arg, func(t *testing.T) {
