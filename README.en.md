@@ -121,6 +121,8 @@ func (r *GreetCommand) Default() {
 }
 ```
 
+`Default()` is also called to obtain the default values shown in help and may run more than once. Do not perform side effects beyond assigning default field values or other non-idempotent work whose result changes between calls.
+
 > [!IMPORTANT]
 > Pass a pointer-to-struct type to `UseCommand`, as in `UseCommand[*GreetCommand]`.
 

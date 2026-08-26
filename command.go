@@ -27,6 +27,9 @@ type defaultValuesProvider func() map[string]any
 
 // CommandDefinition defines the lifecycle methods required by UseCommand.
 type CommandDefinition interface {
+	// Default sets the command definition's default values. It is also called when
+	// generating help and may be called more than once, so it must be idempotent and
+	// must not have side effects beyond assigning default values.
 	Default()
 	Run(context.Context) error
 }
