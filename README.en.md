@@ -121,13 +121,15 @@ func (r *GreetCommand) Default() {
 }
 ```
 
+`Default()` is also called to obtain the default values shown in help and may run more than once. Do not perform side effects beyond assigning default field values or other non-idempotent work whose result changes between calls.
+
 > [!IMPORTANT]
 > Pass a pointer-to-struct type to `UseCommand`, as in `UseCommand[*GreetCommand]`.
 
 > [!NOTE]
 > Boolean option fields behave as flags: `--flag` sets the field to `true`. Use the `--flag=false` form to set an explicit boolean value. Boolean defaults are not shown in help.
 >
-> Slice options accept multiple following values in the separated form, such as `--tag stable fast`. The valued form, such as `--tag=stable`, produces a one-element slice containing only the specified value.
+> In the separated form, such as `--tag stable fast`, a slice option interprets every following value up to the next option as a slice element. The valued form, such as `--tag=stable`, produces a one-element slice containing only the specified value.
 >
 > Use `default:"..."` to customize help output for custom types or to mask/hide sensitive values. For example, `default:"from environment"` displays that text instead of the runtime value, while `default:""` hides the default value.
 
