@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrCommandNotFound = errors.New("Command not found")
+	ErrCommandNotFound = errors.New("command not found")
 )
 
 // App represents a CLI App that can contain commands and sub-applications.
