@@ -415,17 +415,19 @@ func TestApp_SubAppAlias(t *testing.T) {
 }
 
 func TestApp_Context(t *testing.T) {
+	type contextKey struct{}
+
 	var gotVal int
 
 	app := MustNewApp("testapp", "A test application")
 	cmd := MustNewCommand("hoge", "test command", func(ctx context.Context) error {
-		gotVal = ctx.Value("key").(int)
+		gotVal = ctx.Value(contextKey{}).(int)
 		return nil
 	})
 
 	app.AddCommand(cmd)
 
-	ctx := context.WithValue(context.Background(), "key", 123)
+	ctx := context.WithValue(context.Background(), contextKey{}, 123)
 	err := app.RunContext(ctx, "hoge")
 	if err != nil {
 		t.Fatalf("failed to run command with context: %v", err)

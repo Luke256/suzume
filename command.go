@@ -165,7 +165,7 @@ func (cmd *Executable) RunContext(ctx context.Context, args ...string) error {
 
 func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *Config, commandPath string, args ...string) error {
 	if ctx == nil {
-		return fmt.Errorf("Context cannot be nil")
+		return fmt.Errorf("context cannot be nil")
 	}
 
 	config := materializeConfig(cmd.resolveConfig(inheritedConfig))
