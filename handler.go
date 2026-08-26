@@ -280,7 +280,7 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, def
 }
 
 func sortArgSpecs(argSpecs []argSpec) {
-	sort.Slice(argSpecs, func(i, j int) bool {
+	sort.SliceStable(argSpecs, func(i, j int) bool {
 		if argSpecs[i].index < 0 {
 			return false
 		}
