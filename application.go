@@ -133,7 +133,7 @@ func (app *App) runContext(ctx context.Context, inheritedConfig *Config, args ..
 	if ctx == nil {
 		return ErrNilContext
 	}
-	
+
 	configuration := app.resolveConfig(inheritedConfig)
 	args = app.resolveArgs(args)
 
