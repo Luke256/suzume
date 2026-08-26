@@ -93,7 +93,7 @@ func TestApp_Run_UnknownCommandWritesErrorAndHelp(t *testing.T) {
 		t.Fatalf("expected ErrCommandNotFound, got: %v", err)
 	}
 
-	if !strings.Contains(errOut.String(), "Error: Command not found: missing") {
+	if !strings.Contains(errOut.String(), "Error: command not found: missing") {
 		t.Fatalf("expected unknown command error in stderr, got: %q", errOut.String())
 	}
 	if !strings.Contains(out.String(), "Usage:\n  mycli [command] [args...]") {
