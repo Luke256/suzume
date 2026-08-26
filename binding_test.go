@@ -384,6 +384,38 @@ func TestBindArgsToValues_NegativeNumbers(t *testing.T) {
 	}
 }
 
+func TestBindArgsToValues_NegativeUnsignedIntegerIsAValueError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		args  []string
+		specs []argSpec
+	}{
+		{
+			name:  "positional",
+			args:  []string{"-1"},
+			specs: []argSpec{{index: 0, name: "count", typeInfo: reflect.TypeFor[uint]()}},
+		},
+		{
+			name:  "option",
+			args:  []string{"--count", "-1"},
+			specs: []argSpec{{index: -1, name: "count", typeInfo: reflect.TypeFor[uint]()}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := bindArgsToValues(test.args, test.specs)
+			if !errors.Is(err, ErrInvalidArgument) || !strings.Contains(err.Error(), "expected an unsigned integer") {
+				t.Fatalf("expected unsigned integer parse error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestBindArgsToValues_PreservesParseArgError(t *testing.T) {
 	t.Parallel()
 
