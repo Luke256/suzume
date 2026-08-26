@@ -34,7 +34,7 @@ func main() {
 }
 ```
 
-Despite its simplicity, Suzume can provide comparable functionality with less code than other CLI frameworks such as Cobra and urfave/cli.
+Despite its simplicity, Suzume provides the essential functionality needed for CLI applications with less code than other CLI frameworks such as Cobra and urfave/cli.
 The following features make CLI application development in Go simpler and more efficient:
 
 - **Scalability**: Start with a lightweight command and add subcommands or other features as needed.
