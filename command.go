@@ -102,7 +102,7 @@ func MustNewCommand(name, description string, runFunc any) *Executable {
 
 // UseCommand creates a new Executable based on a CommandDefinition type.
 // Its exported fields are used to generate argument specifications.
-// Argument identifiers must be unique, and positional indexes must be non-negative.
+// Argument identifiers and positional indexes must be unique, and positional indexes must be non-negative.
 // Command names beginning with a hyphen are rejected.
 func UseCommand[T CommandDefinition](name, description string) (*Executable, error) {
 	if name == "" {

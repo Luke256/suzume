@@ -890,14 +890,14 @@ func TestUseCommand_SortsSparsePositionalIndexes(t *testing.T) {
 	}
 }
 
-func TestUseCommand_AllowsDuplicatePositionalIndexes(t *testing.T) {
+func TestUseCommand_RejectsDuplicatePositionalIndexes(t *testing.T) {
 	_, err := UseCommand[*struct {
 		Command
 		First  string `cli:"0"`
 		Second string `cli:"0"`
 	}]("test", "Test command")
-	if err != nil {
-		t.Fatalf("expected duplicate positional indexes to be accepted with unspecified order, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "duplicate positional argument index 0") {
+		t.Fatalf("expected duplicate positional index error, got %v", err)
 	}
 }
 
