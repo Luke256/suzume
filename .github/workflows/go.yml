@@ -4,25 +4,39 @@
 name: Go
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    push:
+        branches: ["main"]
+    pull_request:
+        branches: ["main"]
+
+permissions:
+    contents: read
 
 jobs:
+    test:
+        strategy:
+            matrix:
+                go: ["1.22", "1.27"]
 
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.22'
+            - name: Set up Go ${{ matrix.go }}
+              uses: actions/setup-go@v7
+              with:
+                  go-version: ${{ matrix.go }}
+                  cache: false
 
-    - name: Build
-      run: go build -v ./...
+            - name: Test
+              run: go test ./...
 
-    - name: Test
-      run: go test -v ./...
+    vulnerability:
+        runs-on: ubuntu-latest
+        steps:
+            - name: govulncheck
+              uses: golang/govulncheck-action@v1
+              with:
+                  go-version-input: "1.27"
+                  go-package: ./...
+                  cache: false
