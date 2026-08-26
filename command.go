@@ -12,6 +12,7 @@ import (
 
 var (
 	ErrInvalidArgument = errors.New("invalid argument")
+	ErrNilContext      = errors.New("context cannot be nil")
 	helpArgSpec        = argSpec{
 		index:    -1,
 		name:     "help",
@@ -165,7 +166,7 @@ func (cmd *Executable) RunContext(ctx context.Context, args ...string) error {
 
 func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *Config, commandPath string, args ...string) error {
 	if ctx == nil {
-		return fmt.Errorf("context cannot be nil")
+		return ErrNilContext
 	}
 
 	config := materializeConfig(cmd.resolveConfig(inheritedConfig))

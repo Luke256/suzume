@@ -130,6 +130,10 @@ func (app *App) RunContext(ctx context.Context, args ...string) error {
 }
 
 func (app *App) runContext(ctx context.Context, inheritedConfig *Config, args ...string) error {
+	if ctx == nil {
+		return ErrNilContext
+	}
+
 	configuration := app.resolveConfig(inheritedConfig)
 	args = app.resolveArgs(args)
 
