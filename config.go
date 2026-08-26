@@ -10,7 +10,7 @@ import (
 type Config struct {
 	log           io.Writer
 	errorLog      io.Writer
-	ignoreSignals []os.Signal
+	handleSignals []os.Signal
 }
 
 // ConfigOption configures a value created by NewConfig.
@@ -73,11 +73,11 @@ func WithErrorLog(writer io.Writer) ConfigOption {
 	})
 }
 
-// WithIgnoreSignals sets the signals that cancel a command's context instead of
+// WithHandleSignals sets the signals that cancel a command's context instead of
 // using the process's default signal behavior.
-func WithIgnoreSignals(signals ...os.Signal) ConfigOption {
+func WithHandleSignals(signals ...os.Signal) ConfigOption {
 	configuredSignals := append([]os.Signal(nil), signals...)
 	return configOptionFunc(func(configuration *Config) {
-		configuration.ignoreSignals = append([]os.Signal(nil), configuredSignals...)
+		configuration.handleSignals = append([]os.Signal(nil), configuredSignals...)
 	})
 }

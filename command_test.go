@@ -1043,7 +1043,7 @@ func TestCommand_RunContext_SignalHandling(t *testing.T) {
 
 		var out bytes.Buffer
 		cmd.SetConfig(NewConfig(
-			WithIgnoreSignals(os.Interrupt),
+			WithHandleSignals(os.Interrupt),
 			WithLog(&out),
 			WithErrorLog(&out),
 		))
