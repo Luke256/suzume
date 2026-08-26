@@ -28,8 +28,26 @@ jobs:
                   go-version: ${{ matrix.go }}
                   cache: false
 
-            - name: Test
-              run: go test ./...
+            - name: Test with race detector
+              run: go test -race ./...
+
+    lint:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: actions/setup-go@v7
+              with:
+                  go-version: "1.26"
+
+            - name: Check formatting
+              run: test -z "$(gofmt -l .)"
+
+            - name: Staticcheck
+              uses: dominikh/staticcheck-action@v1.4.1
+              with:
+                  version: "2026.1"
+                  install-go: false
 
     vulnerability:
         runs-on: ubuntu-latest
