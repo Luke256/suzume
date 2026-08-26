@@ -191,7 +191,7 @@ Use the following configuration API:
 - `suzume.NewConfig(options ...ConfigOption)` starts from the defaults and applies the supplied options.
 - `suzume.WithLog(writer)` sets the normal log destination.
 - `suzume.WithErrorLog(writer)` sets the error log destination.
-- `suzume.WithIgnoreSignals(signals...)` selects signals to intercept during execution.
+- `suzume.WithHandleSignals(signals...)` selects signals to intercept during execution.
 
 ### Defaults and inheritance
 
@@ -224,11 +224,11 @@ For example, `suzume.WithLog(nil)` keeps `os.Stdout`, while `suzume.WithErrorLog
 
 ### Signal handling
 
-Signals passed to `WithIgnoreSignals` are intercepted while the command is running. Receiving one cancels the command's context instead of immediately terminating the process, allowing shutdown work through `ctx.Done()`.
+Signals passed to `WithHandleSignals` are intercepted while the command is running. Receiving one cancels the command's context instead of immediately terminating the process, allowing shutdown work through `ctx.Done()`.
 
 ```go
 cmd.SetConfig(suzume.NewConfig(
-    suzume.WithIgnoreSignals(os.Interrupt, syscall.SIGTERM),
+    suzume.WithHandleSignals(os.Interrupt, syscall.SIGTERM),
 ))
 ```
 

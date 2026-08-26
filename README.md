@@ -181,7 +181,7 @@ root.Run() // go run main.go sub1 cmd
 - `suzume.NewConfig(options ...ConfigOption)`：既定値から開始し、指定されたオプションを適用します。
 - `suzume.WithLog(writer)`：通常ログの出力先を設定します。
 - `suzume.WithErrorLog(writer)`：エラーログの出力先を設定します。
-- `suzume.WithIgnoreSignals(signals...)`：実行中に捕捉するシグナルを設定します。
+- `suzume.WithHandleSignals(signals...)`：実行中に捕捉するシグナルを設定します。
 
 ### 既定値と継承
 
@@ -214,11 +214,11 @@ cmd.SetConfig(suzume.NewConfig(
 
 ### シグナルのハンドリング
 
-`WithIgnoreSignals` に指定したシグナルは、コマンドの実行中に捕捉されます。シグナルを受け取ると、プロセスを直ちに終了する代わりにコマンドのコンテキストがキャンセルされるため、`ctx.Done()` を通じて終了処理を実行できます。
+`WithHandleSignals` に指定したシグナルは、コマンドの実行中に捕捉されます。シグナルを受け取ると、プロセスを直ちに終了する代わりにコマンドのコンテキストがキャンセルされるため、`ctx.Done()` を通じて終了処理を実行できます。
 
 ```go
 cmd.SetConfig(suzume.NewConfig(
-    suzume.WithIgnoreSignals(os.Interrupt, syscall.SIGTERM),
+    suzume.WithHandleSignals(os.Interrupt, syscall.SIGTERM),
 ))
 ```
 

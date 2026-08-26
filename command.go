@@ -181,8 +181,8 @@ func (cmd *Executable) runContext(ctx context.Context, inheritedConfig *Config, 
 
 	var cmdCtx context.Context
 
-	if len(config.ignoreSignals) > 0 {
-		c, stop := signal.NotifyContext(ctx, config.ignoreSignals...)
+	if len(config.handleSignals) > 0 {
+		c, stop := signal.NotifyContext(ctx, config.handleSignals...)
 		defer stop()
 		cmdCtx = c
 	} else {

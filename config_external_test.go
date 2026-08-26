@@ -35,7 +35,7 @@ func TestConfigAPI_NewConfigIsUsableFromExternalPackage(t *testing.T) {
 	options := []suzume.ConfigOption{
 		suzume.WithLog(&out),
 		suzume.WithErrorLog(&errOut),
-		suzume.WithIgnoreSignals(os.Interrupt),
+		suzume.WithHandleSignals(os.Interrupt),
 	}
 	cfg := suzume.NewConfig(options...)
 

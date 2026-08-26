@@ -13,7 +13,7 @@ var (
 	_ func(...ConfigOption) Config    = NewConfig
 	_ func(io.Writer) ConfigOption    = WithLog
 	_ func(io.Writer) ConfigOption    = WithErrorLog
-	_ func(...os.Signal) ConfigOption = WithIgnoreSignals
+	_ func(...os.Signal) ConfigOption = WithHandleSignals
 	_ func(*App, Config)              = (*App).SetConfig
 	_ func(*Executable, Config)       = (*Executable).SetConfig
 )
@@ -27,8 +27,8 @@ func TestDefaultConfig_UsesStandardStreams(t *testing.T) {
 	if cfg.errorLog != os.Stderr {
 		t.Fatalf("expected stderr error log, got %T", cfg.errorLog)
 	}
-	if len(cfg.ignoreSignals) != 0 {
-		t.Fatalf("expected no ignored signals, got %v", cfg.ignoreSignals)
+	if len(cfg.handleSignals) != 0 {
+		t.Fatalf("expected no handled signals, got %v", cfg.handleSignals)
 	}
 }
 
@@ -41,8 +41,8 @@ func TestNewConfig_StartsFromDefaults(t *testing.T) {
 	if cfg.errorLog != os.Stderr {
 		t.Fatalf("expected stderr error log, got %T", cfg.errorLog)
 	}
-	if len(cfg.ignoreSignals) != 0 {
-		t.Fatalf("expected no ignored signals, got %v", cfg.ignoreSignals)
+	if len(cfg.handleSignals) != 0 {
+		t.Fatalf("expected no handled signals, got %v", cfg.handleSignals)
 	}
 }
 
@@ -106,10 +106,10 @@ func TestNewConfig_AppliesOptionsInOrder(t *testing.T) {
 	cfg := NewConfig(
 		WithLog(&firstOut),
 		WithErrorLog(&firstErrOut),
-		WithIgnoreSignals(os.Interrupt),
+		WithHandleSignals(os.Interrupt),
 		WithLog(&lastOut),
 		WithErrorLog(&lastErrOut),
-		WithIgnoreSignals(os.Kill),
+		WithHandleSignals(os.Kill),
 	)
 
 	if cfg.log != &lastOut {
@@ -118,24 +118,24 @@ func TestNewConfig_AppliesOptionsInOrder(t *testing.T) {
 	if cfg.errorLog != &lastErrOut {
 		t.Fatalf("expected last error log option to win, got %T", cfg.errorLog)
 	}
-	if len(cfg.ignoreSignals) != 1 || cfg.ignoreSignals[0] != os.Kill {
-		t.Fatalf("expected last signal option to win, got %v", cfg.ignoreSignals)
+	if len(cfg.handleSignals) != 1 || cfg.handleSignals[0] != os.Kill {
+		t.Fatalf("expected last signal option to win, got %v", cfg.handleSignals)
 	}
 }
 
-func TestWithIgnoreSignals_ClonesInput(t *testing.T) {
+func TestWithHandleSignals_ClonesInput(t *testing.T) {
 	signals := []os.Signal{os.Interrupt, os.Kill}
-	option := WithIgnoreSignals(signals...)
+	option := WithHandleSignals(signals...)
 
 	signals[0] = os.Kill
 	cfg := NewConfig(option)
 	signals[1] = os.Interrupt
 
-	if len(cfg.ignoreSignals) != 2 {
-		t.Fatalf("expected two ignored signals, got %v", cfg.ignoreSignals)
+	if len(cfg.handleSignals) != 2 {
+		t.Fatalf("expected two handled signals, got %v", cfg.handleSignals)
 	}
-	if cfg.ignoreSignals[0] != os.Interrupt || cfg.ignoreSignals[1] != os.Kill {
-		t.Fatalf("expected cloned signal input, got %v", cfg.ignoreSignals)
+	if cfg.handleSignals[0] != os.Interrupt || cfg.handleSignals[1] != os.Kill {
+		t.Fatalf("expected cloned signal input, got %v", cfg.handleSignals)
 	}
 }
 
