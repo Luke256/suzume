@@ -145,6 +145,7 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, def
 		helpArgSpec.name:  {},
 		helpArgSpec.short: {},
 	}
+	positionalIndexes := make(map[int]struct{})
 
 	for i := range structType.NumField() {
 		field := structType.Field(i)
@@ -163,6 +164,10 @@ func createCommandHandler[T CommandDefinition]() ([]argSpec, commandHandler, def
 			if idx < 0 {
 				return nil, nil, nil, fmt.Errorf("invalid positional argument index %d for field %s", idx, field.Name)
 			}
+			if _, exists := positionalIndexes[idx]; exists {
+				return nil, nil, nil, fmt.Errorf("duplicate positional argument index %d for field %s", idx, field.Name)
+			}
+			positionalIndexes[idx] = struct{}{}
 
 			if field.Type.Kind() == reflect.Slice {
 				return nil, nil, nil, fmt.Errorf("slice fields cannot be used as positional arguments: %s", field.Name)
