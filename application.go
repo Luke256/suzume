@@ -206,6 +206,9 @@ func inspectAppHelpArgs(args []string) (showHelp bool, invalidArg string) {
 	}
 
 	for _, arg := range args[1:] {
+		if arg == "--" {
+			break
+		}
 		if isValuedHelpArg(arg) {
 			return false, arg
 		}

@@ -229,7 +229,7 @@ func TestBindArgsToValues_BindsSliceOption(t *testing.T) {
 	}{
 		{name: "separated", args: []string{"--country", "JP"}, want: []country{countryJapan}},
 		{name: "valued", args: []string{"--country=JP"}, want: []country{countryJapan}},
-		{name: "valued replaces accumulated values", args: []string{"--country", "JP", "--country=JP"}, want: []country{countryJapan}},
+		{name: "repeated", args: []string{"--country", "JP", "--country=JP"}, want: []country{countryJapan, countryJapan}},
 	}
 
 	for _, test := range tests {
@@ -286,14 +286,133 @@ func TestBindArgsToValues_NamedBoolFlag(t *testing.T) {
 func TestBindArgsToValues_MissingOptionValue(t *testing.T) {
 	t.Parallel()
 
-	specs := []argSpec{{index: -1, name: "count", short: "c", typeInfo: reflect.TypeFor[int]()}}
-
-	_, err := bindArgsToValues([]string{"--count"}, specs)
-	if !errors.Is(err, ErrInvalidArgument) {
-		t.Fatalf("expected ErrInvalidArgument, got: %v", err)
+	tests := []struct {
+		name     string
+		args     []string
+		typeInfo reflect.Type
+	}{
+		{name: "scalar", args: []string{"--count"}, typeInfo: reflect.TypeFor[int]()},
+		{name: "before another option", args: []string{"--count", "--help"}, typeInfo: reflect.TypeFor[int]()},
+		{name: "slice", args: []string{"--count"}, typeInfo: reflect.TypeFor[[]int]()},
 	}
-	if !strings.Contains(err.Error(), "missing value for option: count") {
-		t.Fatalf("unexpected error: %v", err)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			specs := []argSpec{
+				{index: -1, name: "count", short: "c", typeInfo: test.typeInfo},
+				helpArgSpec,
+			}
+			_, err := bindArgsToValues(test.args, specs)
+			if !errors.Is(err, ErrInvalidArgument) {
+				t.Fatalf("expected ErrInvalidArgument, got: %v", err)
+			}
+			if !strings.Contains(err.Error(), "missing value for option: count") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestBindArgsToValues_ParsesOptionsStrictly(t *testing.T) {
+	t.Parallel()
+
+	specs := []argSpec{
+		{index: -1, name: "count", short: "c", typeInfo: reflect.TypeFor[int]()},
+		{index: -1, name: "verbose", short: "v", typeInfo: reflect.TypeFor[bool]()},
+	}
+
+	tests := []struct {
+		name string
+		arg  string
+	}{
+		{name: "unknown long option", arg: "--missing"},
+		{name: "unknown short option", arg: "-x"},
+		{name: "long name with short prefix", arg: "-count"},
+		{name: "short name with long prefix", arg: "--c"},
+		{name: "too many hyphens", arg: "---count"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := bindArgsToValues([]string{test.arg}, specs)
+			if !errors.Is(err, ErrInvalidArgument) || !strings.Contains(err.Error(), "unknown option") {
+				t.Fatalf("expected unknown option error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestBindArgsToValues_OptionTerminator(t *testing.T) {
+	t.Parallel()
+
+	specs := []argSpec{
+		{index: 0, name: "value", typeInfo: reflect.TypeFor[string]()},
+		{index: -1, name: "verbose", short: "v", typeInfo: reflect.TypeFor[bool]()},
+	}
+	values, err := bindArgsToValues([]string{"--", "--verbose"}, specs)
+	if err != nil {
+		t.Fatalf("bind failed: %v", err)
+	}
+	if got := findValueByName(specs, values, "value").String(); got != "--verbose" {
+		t.Fatalf("expected literal positional value, got %q", got)
+	}
+	if findValueByName(specs, values, "verbose").IsValid() {
+		t.Fatal("expected option parsing to stop after --")
+	}
+}
+
+func TestBindArgsToValues_NegativeNumbers(t *testing.T) {
+	t.Parallel()
+
+	specs := []argSpec{
+		{index: 0, name: "offset", typeInfo: reflect.TypeFor[int]()},
+		{index: -1, name: "values", short: "v", typeInfo: reflect.TypeFor[[]float64]()},
+	}
+	values, err := bindArgsToValues([]string{"-2", "--values", "-1.5", "2.5"}, specs)
+	if err != nil {
+		t.Fatalf("bind failed: %v", err)
+	}
+	if got := findValueByName(specs, values, "offset").Int(); got != -2 {
+		t.Fatalf("expected -2, got %d", got)
+	}
+	if got := findValueByName(specs, values, "values").Interface(); !reflect.DeepEqual(got, []float64{-1.5, 2.5}) {
+		t.Fatalf("unexpected values: %#v", got)
+	}
+}
+
+func TestBindArgsToValues_NegativeUnsignedIntegerIsAValueError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		args  []string
+		specs []argSpec
+	}{
+		{
+			name:  "positional",
+			args:  []string{"-1"},
+			specs: []argSpec{{index: 0, name: "count", typeInfo: reflect.TypeFor[uint]()}},
+		},
+		{
+			name:  "option",
+			args:  []string{"--count", "-1"},
+			specs: []argSpec{{index: -1, name: "count", typeInfo: reflect.TypeFor[uint]()}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := bindArgsToValues(test.args, test.specs)
+			if !errors.Is(err, ErrInvalidArgument) || !strings.Contains(err.Error(), "expected an unsigned integer") {
+				t.Fatalf("expected unsigned integer parse error, got %v", err)
+			}
+		})
 	}
 }
 

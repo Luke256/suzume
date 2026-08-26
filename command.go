@@ -209,6 +209,9 @@ func (cmd *Executable) handleRunError(err error, config Config, commandPath stri
 
 func inspectHelpArgs(args []string) (showHelp bool, invalidArg string) {
 	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
 		if isValuedHelpArg(arg) {
 			return false, arg
 		}
